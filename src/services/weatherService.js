@@ -31,6 +31,7 @@ class WeatherService {
     } catch (error) {
       console.error('Erreur météo:', error);
       throw error;
+      
     }
   }
 
