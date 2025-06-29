@@ -2,7 +2,7 @@ const webpack = require('webpack');
 
 module.exports = {
   webpack: {
-    configure: (webpackConfig) => {
+    configure: (webpackConfig, { env, paths }) => {
       // 1. Assurez-vous que les sections resolve et fallback existent
       if (!webpackConfig.resolve) {
         webpackConfig.resolve = {};
@@ -38,8 +38,9 @@ module.exports = {
       // 4. Définissez uniquement les variables d'environnement nécessaires
       webpackConfig.plugins.push(
         new webpack.DefinePlugin({
-          'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV),
-          'process.env.REACT_APP_API_URL': JSON.stringify(process.env.REACT_APP_API_URL)
+          'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV || env),
+          'process.env.REACT_APP_API_URL': JSON.stringify(process.env.REACT_APP_API_URL),
+          'process.env.REACT_APP_OPENWEATHER_API_KEY': JSON.stringify(process.env.REACT_APP_OPENWEATHER_API_KEY)
         })
       );
 

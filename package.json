@@ -22,7 +22,7 @@
     "xlsx": "^0.18.5"
   },
   "scripts": {
-    "start": "set PORT=3000 && craco start",
+    "start": "PORT=3000 craco start",
     "build": "craco build",
     "test": "craco test",
     "eject": "react-scripts eject",
