@@ -1,70 +1,244 @@
-# Getting Started with Create React App
+# Karting Endurance - Système de gestion des relais
 
-This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
+Application React pour la gestion des courses de karting endurance avec API MongoDB.
 
-## Available Scripts
+## 🚀 Installation et démarrage
 
-In the project directory, you can run:
+### Prérequis
+- Node.js (v14 ou supérieur)
+- MongoDB (local ou cloud)
+- npm ou yarn
 
-### `npm start`
+### Installation
 
-Runs the app in the development mode.\
-Open [http://localhost:3000](http://localhost:3000) to view it in your browser.
+1. **Cloner le projet**
+```bash
+git clone <repository-url>
+cd karting-endurance
+```
 
-The page will reload when you make changes.\
-You may also see any lint errors in the console.
+2. **Installer les dépendances**
+```bash
+npm install
+```
 
-### `npm test`
+3. **Configuration MongoDB**
+   
+   Créer un fichier `.env` à la racine du projet :
+   ```env
+   MONGODB_URI=mongodb://localhost:27017/karting-endurance
+   PORT=5000
+   NODE_ENV=development
+   REACT_APP_API_URL=http://localhost:5000/api
+   ```
 
-Launches the test runner in the interactive watch mode.\
-See the section about [running tests](https://facebook.github.io/create-react-app/docs/running-tests) for more information.
+   Pour MongoDB Atlas :
+   ```env
+   MONGODB_URI=mongodb+srv://username:password@cluster.mongodb.net/karting-endurance
+   PORT=5000
+   NODE_ENV=development
+   REACT_APP_API_URL=http://localhost:5000/api
+   ```
 
-### `npm run build`
+4. **Démarrer MongoDB**
+   - Local : `mongod`
+   - Ou utiliser MongoDB Atlas (cloud)
 
-Builds the app for production to the `build` folder.\
-It correctly bundles React in production mode and optimizes the build for the best performance.
+5. **Lancer l'application**
+```bash
+# Démarrage complet (frontend + backend)
+npm run dev
 
-The build is minified and the filenames include the hashes.\
-Your app is ready to be deployed!
+# Ou séparément :
+npm run server  # Backend uniquement
+npm start       # Frontend uniquement
+```
 
-See the section about [deployment](https://facebook.github.io/create-react-app/docs/deployment) for more information.
+## 📁 Structure du projet
 
-### `npm run eject`
+```
+karting-endurance/
+├── server/                 # Backend API
+│   ├── models/            # Modèles MongoDB
+│   │   ├── Race.js        # Modèle Course
+│   │   ├── Driver.js      # Modèle Pilote
+│   │   └── Lap.js         # Modèle Relais
+│   ├── routes/            # Routes API
+│   │   ├── races.js       # Routes courses
+│   │   ├── drivers.js     # Routes pilotes
+│   │   └── laps.js        # Routes relais
+│   └── server.js          # Serveur Express
+├── src/                   # Frontend React
+│   ├── services/          # Services API
+│   │   └── api.js         # Configuration API
+│   ├── pages/             # Pages React
+│   │   └── Home.jsx       # Page principale
+│   └── ...
+└── package.json
+```
 
-**Note: this is a one-way operation. Once you `eject`, you can't go back!**
+## 🔧 API Endpoints
 
-If you aren't satisfied with the build tool and configuration choices, you can `eject` at any time. This command will remove the single build dependency from your project.
+### Courses (`/api/races`)
+- `GET /` - Récupérer toutes les courses
+- `GET /:id` - Récupérer une course par ID
+- `POST /` - Créer une nouvelle course
+- `PUT /:id` - Mettre à jour une course
+- `DELETE /:id` - Supprimer une course
+- `POST /:id/start` - Démarrer une course
+- `POST /:id/pause` - Pauser une course
+- `POST /:id/finish` - Terminer une course
+- `POST /:id/change-driver` - Changer de pilote
+- `GET /:id/stats` - Statistiques d'une course
 
-Instead, it will copy all the configuration files and the transitive dependencies (webpack, Babel, ESLint, etc) right into your project so you have full control over them. All of the commands except `eject` will still work, but they will point to the copied scripts so you can tweak them. At this point you're on your own.
+### Pilotes (`/api/drivers`)
+- `GET /` - Récupérer tous les pilotes
+- `GET /:id` - Récupérer un pilote par ID
+- `POST /` - Créer un nouveau pilote
+- `PUT /:id` - Mettre à jour un pilote
+- `DELETE /:id` - Supprimer un pilote
+- `GET /:id/stats` - Statistiques d'un pilote
+- `POST /:id/reset-stats` - Réinitialiser les stats
+- `GET /leaderboard/overall` - Classement général
 
-You don't have to ever use `eject`. The curated feature set is suitable for small and middle deployments, and you shouldn't feel obligated to use this feature. However we understand that this tool wouldn't be useful if you couldn't customize it when you are ready for it.
+### Relais (`/api/laps`)
+- `GET /` - Récupérer tous les relais
+- `GET /:id` - Récupérer un relais par ID
+- `POST /` - Créer un nouveau relais
+- `PUT /:id` - Mettre à jour un relais
+- `DELETE /:id` - Supprimer un relais
+- `GET /race/:raceId` - Relais d'une course
+- `GET /driver/:driverId` - Relais d'un pilote
+- `GET /best/overall` - Meilleurs relais
+- `GET /best/race/:raceId` - Meilleurs relais par course
+- `POST /record` - Enregistrer un relais avec validation
 
-## Learn More
+## 🗄️ Modèles de données
 
-You can learn more in the [Create React App documentation](https://facebook.github.io/create-react-app/docs/getting-started).
+### Course
+```javascript
+{
+  name: String,
+  startTime: Date,
+  endTime: Date,
+  duration: Number, // minutes
+  status: String, // 'pending', 'running', 'paused', 'finished'
+  settings: {
+    minStintTime: Number,
+    maxStintTime: Number,
+    targetLaps: Number
+  },
+  totalLaps: Number,
+  totalTime: Number, // millisecondes
+  currentDriver: ObjectId,
+  currentStintStart: Date
+}
+```
 
-To learn React, check out the [React documentation](https://reactjs.org/).
+### Pilote
+```javascript
+{
+  name: String,
+  color: String,
+  totalTime: Number, // millisecondes
+  laps: Number,
+  bestLap: Number, // millisecondes
+  averageLap: Number, // millisecondes
+  isActive: Boolean
+}
+```
 
-### Code Splitting
+### Relais
+```javascript
+{
+  race: ObjectId,
+  driver: ObjectId,
+  driverName: String,
+  lapNumber: Number,
+  lapTime: Number, // millisecondes
+  totalTime: Number, // millisecondes
+  stintStartTime: Date,
+  stintEndTime: Date,
+  isBestLap: Boolean,
+  notes: String
+}
+```
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/code-splitting](https://facebook.github.io/create-react-app/docs/code-splitting)
+## 🚀 Scripts disponibles
 
-### Analyzing the Bundle Size
+- `npm start` - Démarrer le frontend React
+- `npm run server` - Démarrer le serveur backend
+- `npm run dev` - Démarrer frontend + backend simultanément
+- `npm run build` - Build de production
+- `npm test` - Lancer les tests
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size](https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size)
+## 🔒 Variables d'environnement
 
-### Making a Progressive Web App
+| Variable | Description | Défaut |
+|----------|-------------|---------|
+| `MONGODB_URI` | URI de connexion MongoDB | `mongodb://localhost:27017/karting-endurance` |
+| `PORT` | Port du serveur backend | `5000` |
+| `NODE_ENV` | Environnement | `development` |
+| `REACT_APP_API_URL` | URL de l'API frontend | `http://localhost:5000/api` |
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app](https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app)
+## 📊 Fonctionnalités
 
-### Advanced Configuration
+- ✅ Gestion des courses en temps réel
+- ✅ Chronométrage précis des relais
+- ✅ Gestion des pilotes et équipes
+- ✅ Statistiques détaillées
+- ✅ Graphiques de performance
+- ✅ API REST complète
+- ✅ Base de données MongoDB
+- ✅ Interface responsive
+- ✅ Persistance des données
+- ✅ Gestion d'erreurs
+- ✅ États de chargement
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/advanced-configuration](https://facebook.github.io/create-react-app/docs/advanced-configuration)
+## 🛠️ Technologies utilisées
 
-### Deployment
+- **Frontend** : React, Tailwind CSS, Recharts, Axios
+- **Backend** : Node.js, Express, MongoDB, Mongoose
+- **API** : REST API avec validation
+- **Base de données** : MongoDB avec indexation optimisée
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/deployment](https://facebook.github.io/create-react-app/docs/deployment)
+## 🔧 Configuration rapide
 
-### `npm run build` fails to minify
+1. **Créer le fichier `.env`** :
+```bash
+echo "MONGODB_URI=mongodb://localhost:27017/karting-endurance
+PORT=5000
+NODE_ENV=development
+REACT_APP_API_URL=http://localhost:5000/api" > .env
+```
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify](https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify)
+2. **Démarrer MongoDB** :
+```bash
+mongod
+```
+
+3. **Lancer l'application** :
+```bash
+npm run dev
+```
+
+4. **Accéder à l'application** :
+- Frontend : http://localhost:3000
+- API : http://localhost:5000/api
+
+## 🐛 Dépannage
+
+### Erreur de connexion MongoDB
+- Vérifiez que MongoDB est démarré
+- Vérifiez l'URI dans le fichier `.env`
+- Testez la connexion : `mongo mongodb://localhost:27017/karting-endurance`
+
+### Erreur de connexion API
+- Vérifiez que le serveur backend est démarré sur le port 5000
+- Vérifiez la variable `REACT_APP_API_URL` dans `.env`
+- Testez l'API : `curl http://localhost:5000/api/test`
+
+### Erreur de build
+- Supprimez `node_modules` et `package-lock.json`
+- Relancez `npm install`
+- Relancez `npm run dev`
