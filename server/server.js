@@ -28,10 +28,11 @@ app.use(cors({
     
     // Pour Render, autoriser tous les domaines .onrender.com
     if (incomingOrigin.includes('.onrender.com')) {
+      console.log('✅ Origine Render autorisée:', incomingOrigin);
       return callback(null, true);
     }
     
-    console.log('Origin non autorisée:', incomingOrigin);
+    console.log('❌ Origin non autorisée:', incomingOrigin);
     callback(new Error('Origin non autorisée par CORS'), false);
   },
   credentials: true,

@@ -10,7 +10,7 @@ services:
       - key: MONGODB_URI
         sync: false
       - key: REACT_APP_API_URL
-        value: https://karting-endurance.onrender.com/api
+        value: https://endurance-karting.onrender.com/api
       - key: REACT_APP_OPENWEATHER_API_KEY
         sync: false
     healthCheckPath: /api/test

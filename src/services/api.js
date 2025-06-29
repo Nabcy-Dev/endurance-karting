@@ -2,10 +2,11 @@ import axios from 'axios';
 
 // Détection automatique de l'URL de l'API
 const getApiBaseUrl = () => {
-  // En production, utiliser l'URL de la page actuelle
+  // En production, utiliser l'URL de production spécifique
   if (process.env.NODE_ENV === 'production') {
-    const currentOrigin = window.location.origin;
-    return `${currentOrigin}/api`;
+    // Utiliser l'URL de production configurée ou détecter automatiquement
+    const productionUrl = process.env.REACT_APP_API_URL || 'https://endurance-karting.onrender.com/api';
+    return productionUrl;
   }
   
   // En développement, utiliser l'URL configurée ou localhost
@@ -17,7 +18,8 @@ const API_BASE_URL = getApiBaseUrl();
 console.log('🔗 Configuration API:', {
   environment: process.env.NODE_ENV,
   apiUrl: API_BASE_URL,
-  currentOrigin: window.location.origin
+  currentOrigin: window.location.origin,
+  productionUrl: process.env.REACT_APP_API_URL
 });
 
 // Configuration axios
@@ -38,7 +40,8 @@ api.interceptors.response.use(
       method: error.config?.method,
       status: error.response?.status,
       message: error.response?.data?.message || error.message,
-      data: error.response?.data
+      data: error.response?.data,
+      fullUrl: error.config?.baseURL + error.config?.url
     });
     
     // Améliorer les messages d'erreur
@@ -48,6 +51,8 @@ api.interceptors.response.use(
       error.message = 'Serveur temporairement indisponible. Veuillez réessayer dans quelques minutes.';
     } else if (error.response?.status === 403) {
       error.message = 'Erreur CORS: Accès non autorisé.';
+    } else if (error.response?.status === 404) {
+      error.message = 'Route API non trouvée. Vérifiez la configuration de l\'URL API.';
     }
     
     return Promise.reject(error);
