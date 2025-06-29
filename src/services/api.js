@@ -1,6 +1,24 @@
 import axios from 'axios';
 
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
+// Détection automatique de l'URL de l'API
+const getApiBaseUrl = () => {
+  // En production, utiliser l'URL de la page actuelle
+  if (process.env.NODE_ENV === 'production') {
+    const currentOrigin = window.location.origin;
+    return `${currentOrigin}/api`;
+  }
+  
+  // En développement, utiliser l'URL configurée ou localhost
+  return process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
+};
+
+const API_BASE_URL = getApiBaseUrl();
+
+console.log('🔗 Configuration API:', {
+  environment: process.env.NODE_ENV,
+  apiUrl: API_BASE_URL,
+  currentOrigin: window.location.origin
+});
 
 // Configuration axios
 const api = axios.create({
@@ -8,13 +26,30 @@ const api = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
+  timeout: 10000, // Timeout de 10 secondes
 });
 
 // Intercepteur pour gérer les erreurs
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    console.error('API Error:', error.response?.data || error.message);
+    console.error('API Error:', {
+      url: error.config?.url,
+      method: error.config?.method,
+      status: error.response?.status,
+      message: error.response?.data?.message || error.message,
+      data: error.response?.data
+    });
+    
+    // Améliorer les messages d'erreur
+    if (error.code === 'ERR_NETWORK') {
+      error.message = 'Erreur de connexion au serveur. Vérifiez que le serveur est démarré.';
+    } else if (error.response?.status === 502) {
+      error.message = 'Serveur temporairement indisponible. Veuillez réessayer dans quelques minutes.';
+    } else if (error.response?.status === 403) {
+      error.message = 'Erreur CORS: Accès non autorisé.';
+    }
+    
     return Promise.reject(error);
   }
 );

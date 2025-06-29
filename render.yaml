@@ -12,4 +12,6 @@ services:
       - key: REACT_APP_API_URL
         value: https://karting-endurance.onrender.com/api
       - key: REACT_APP_OPENWEATHER_API_KEY
-        sync: false 
+        sync: false
+    healthCheckPath: /api/test
+    autoDeploy: true 

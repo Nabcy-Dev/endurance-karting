@@ -6,24 +6,37 @@ require('dotenv').config();
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-// Configuration CORS améliorée
+// Configuration CORS améliorée pour Render
 const allowedOrigins = [
   'http://localhost:3000',
-  'https://endurance-karting-1.onrender.com'
+  'https://endurance-karting-1.onrender.com',
+  'https://endurance-karting.onrender.com',
+  'https://karting-endurance.onrender.com'
 ];
 
 app.use(cors({
   origin: (incomingOrigin, callback) => {
-    // si l'origine est dans la liste, on l'autorise ; sinon on la refuse
-    if (!incomingOrigin || allowedOrigins.includes(incomingOrigin)) {
-      callback(null, true);
-    } else {
-      callback(new Error('Origin non autorisée par CORS'), false);
+    // Autoriser les requêtes sans origine (comme les appels API directs)
+    if (!incomingOrigin) {
+      return callback(null, true);
     }
+    
+    // Vérifier si l'origine est autorisée
+    if (allowedOrigins.includes(incomingOrigin)) {
+      return callback(null, true);
+    }
+    
+    // Pour Render, autoriser tous les domaines .onrender.com
+    if (incomingOrigin.includes('.onrender.com')) {
+      return callback(null, true);
+    }
+    
+    console.log('Origin non autorisée:', incomingOrigin);
+    callback(new Error('Origin non autorisée par CORS'), false);
   },
-  credentials: true,            // si tu gères les cookies / authentification
-  methods: ['GET','POST','PUT','DELETE','OPTIONS'],
-  allowedHeaders: ['Content-Type','Authorization']
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
 }));
 
 // Augmenter la limite de taille des requêtes pour les images base64
@@ -99,22 +112,56 @@ app.use('/api/laps', require('./routes/laps'));
 
 // Route de test
 app.get('/api/test', (req, res) => {
-  res.json({ message: 'API Karting Endurance fonctionnelle!' });
+  res.json({ 
+    message: 'API Karting Endurance fonctionnelle!',
+    timestamp: new Date().toISOString(),
+    environment: process.env.NODE_ENV || 'development',
+    mongodb: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected'
+  });
 });
 
 // Route racine
 app.get('/', (req, res) => {
-  res.json({ message: 'Serveur Karting Endurance démarré' });
+  res.json({ 
+    message: 'Serveur Karting Endurance démarré',
+    timestamp: new Date().toISOString(),
+    environment: process.env.NODE_ENV || 'development'
+  });
 });
+
+// Route pour servir les fichiers statiques React en production
+if (process.env.NODE_ENV === 'production') {
+  const path = require('path');
+  
+  // Servir les fichiers statiques du build React
+  app.use(express.static(path.join(__dirname, '../build')));
+  
+  // Route catch-all pour servir index.html
+  app.get('*', (req, res) => {
+    res.sendFile(path.join(__dirname, '../build/index.html'));
+  });
+}
 
 // Gestion des erreurs globales
 app.use((err, req, res, next) => {
-  console.error(err.stack);
-  res.status(500).json({ message: 'Erreur interne du serveur' });
+  console.error('Erreur serveur:', err);
+  
+  if (err.message === 'Origin non autorisée par CORS') {
+    return res.status(403).json({ 
+      message: 'Erreur CORS: Origine non autorisée',
+      error: err.message 
+    });
+  }
+  
+  res.status(500).json({ 
+    message: 'Erreur interne du serveur',
+    error: process.env.NODE_ENV === 'development' ? err.message : 'Erreur serveur'
+  });
 });
 
 app.listen(PORT, () => {
   console.log(`🚀 Serveur démarré sur le port ${PORT}`);
   console.log(`API disponible sur http://localhost:${PORT}/api`);
   console.log(`📁 Environnement: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`🌐 CORS autorisé pour: ${allowedOrigins.join(', ')}`);
 }); 
