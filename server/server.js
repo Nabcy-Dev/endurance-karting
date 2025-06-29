@@ -7,12 +7,23 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 
 // Configuration CORS améliorée
+const allowedOrigins = [
+  'http://localhost:3000',
+  'https://endurance-karting-1.onrender.com'
+];
+
 app.use(cors({
-  
-  origin: ['http://localhost:3000', 'www.framup.com', 'endurance-karting-1.onrender.com'],
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
+  origin: (incomingOrigin, callback) => {
+    // si l'origine est dans la liste, on l'autorise ; sinon on la refuse
+    if (!incomingOrigin || allowedOrigins.includes(incomingOrigin)) {
+      callback(null, true);
+    } else {
+      callback(new Error('Origin non autorisée par CORS'), false);
+    }
+  },
+  credentials: true,            // si tu gères les cookies / authentification
+  methods: ['GET','POST','PUT','DELETE','OPTIONS'],
+  allowedHeaders: ['Content-Type','Authorization']
 }));
 
 // Augmenter la limite de taille des requêtes pour les images base64
