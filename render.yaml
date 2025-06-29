@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: karting-endurance
+    env: node
+    buildCommand: npm install && npm run build
+    startCommand: npm run server
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: MONGODB_URI
+        sync: false
+      - key: REACT_APP_API_URL
+        value: https://karting-endurance.onrender.com/api
+      - key: REACT_APP_OPENWEATHER_API_KEY
+        sync: false 
