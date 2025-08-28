@@ -9,42 +9,47 @@ const app = express();
 const server = http.createServer(app);
 const io = socketIo(server, {
   cors: {
-    origin: [
-      'http://localhost:3000',
-      'https://endurance-karting-1.onrender.com',
-      'https://endurance-karting.onrender.com',
-      'https://karting-endurance.onrender.com'
-    ],
-    methods: ["GET", "POST"],
-    credentials: true
-  }
+    origin: function (origin, callback) {
+      // Autoriser toutes les origines en production pour Socket.IO
+      if (!origin || origin.includes('.onrender.com') || origin.includes('localhost')) {
+        return callback(null, true);
+      }
+      callback(null, true);
+    },
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    credentials: true,
+    allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"]
+  },
+  transports: ['websocket', 'polling'],
+  allowEIO3: true,
+  pingTimeout: 60000,
+  pingInterval: 25000
 });
 
 const PORT = process.env.PORT || 5000;
 
-// Configuration CORS améliorée pour Render
-const allowedOrigins = [
-  'http://localhost:3000',
-  'https://endurance-karting-1.onrender.com',
-  'https://endurance-karting.onrender.com',
-  'https://karting-endurance.onrender.com'
-];
-
+// Configuration CORS améliorée pour Render et Socket.IO
 app.use(cors({
-  origin: (incomingOrigin, callback) => {
+  origin: function (incomingOrigin, callback) {
     // Autoriser les requêtes sans origine (comme les appels API directs)
     if (!incomingOrigin) {
       return callback(null, true);
     }
     
-    // Vérifier si l'origine est autorisée
-    if (allowedOrigins.includes(incomingOrigin)) {
+    // Autoriser localhost en développement
+    if (incomingOrigin.includes('localhost')) {
       return callback(null, true);
     }
     
-    // Pour Render, autoriser tous les domaines .onrender.com
+    // Autoriser tous les domaines Render
     if (incomingOrigin.includes('.onrender.com')) {
       console.log('✅ Origine Render autorisée:', incomingOrigin);
+      return callback(null, true);
+    }
+    
+    // Autoriser les autres domaines en production
+    if (process.env.NODE_ENV === 'production') {
+      console.log('✅ Origine production autorisée:', incomingOrigin);
       return callback(null, true);
     }
     
@@ -178,94 +183,151 @@ app.use((err, req, res, next) => {
 
 // Gestion des connexions Socket.IO
 io.on('connection', (socket) => {
-  console.log(`🔌 Client connecté: ${socket.id}`);
+  console.log(`🔌 Client connecté: ${socket.id} depuis ${socket.handshake.headers.origin || 'origine inconnue'}`);
+  
+  // Gérer les erreurs de connexion
+  socket.on('error', (error) => {
+    console.error(`❌ Erreur Socket.IO pour ${socket.id}:`, error);
+  });
+  
+  // Gérer la déconnexion
+  socket.on('disconnect', (reason) => {
+    console.log(`🔌 Client déconnecté: ${socket.id}, raison: ${reason}`);
+  });
   
   // Rejoindre la salle de course
   socket.on('join-race', (raceId) => {
-    socket.join(`race-${raceId}`);
-    console.log(`🏁 Client ${socket.id} a rejoint la course ${raceId}`);
-    
-    // Émettre l'état actuel de la course à tous les clients dans la salle
-    socket.to(`race-${raceId}`).emit('user-joined-race', {
-      raceId,
-      userId: socket.id,
-      timestamp: Date.now()
-    });
+    try {
+      socket.join(`race-${raceId}`);
+      console.log(`🏁 Client ${socket.id} a rejoint la course ${raceId}`);
+      
+      // Émettre l'état actuel de la course à tous les clients dans la salle
+      socket.to(`race-${raceId}`).emit('user-joined-race', {
+        raceId,
+        userId: socket.id,
+        timestamp: Date.now()
+      });
+    } catch (error) {
+      console.error(`❌ Erreur lors de la jointure de course:`, error);
+    }
   });
   
   // Quitter la salle de course
   socket.on('leave-race', (raceId) => {
-    socket.leave(`race-${raceId}`);
-    console.log(`🚪 Client ${socket.id} a quitté la course ${raceId}`);
+    try {
+      socket.leave(`race-${raceId}`);
+      console.log(`🚪 Client ${socket.id} a quitté la course ${raceId}`);
+    } catch (error) {
+      console.error(`❌ Erreur lors de la sortie de course:`, error);
+    }
   });
   
   // Événements de course
   socket.on('race-started', (data) => {
-    socket.to(`race-${data.raceId}`).emit('race-started', data);
-    console.log(`🚀 Course démarrée: ${data.raceId}`);
+    try {
+      socket.to(`race-${data.raceId}`).emit('race-started', data);
+      console.log(`🚀 Course démarrée: ${data.raceId}`);
+    } catch (error) {
+      console.error(`❌ Erreur lors de l'émission race-started:`, error);
+    }
   });
   
   socket.on('race-finished', (data) => {
-    socket.to(`race-${data.raceId}`).emit('race-finished', data);
-    console.log(`🏁 Course terminée: ${data.raceId}`);
+    try {
+      socket.to(`race-${data.raceId}`).emit('race-finished', data);
+      console.log(`🏁 Course terminée: ${data.raceId}`);
+    } catch (error) {
+      console.error(`❌ Erreur lors de l'émission race-finished:`, error);
+    }
   });
   
   socket.on('race-reset', (data) => {
-    socket.to(`race-${data.raceId}`).emit('race-reset', data);
-    console.log(`🔄 Course réinitialisée: ${data.raceId}`);
+    try {
+      socket.to(`race-${data.raceId}`).emit('race-reset', data);
+      console.log(`🔄 Course réinitialisée: ${data.raceId}`);
+    } catch (error) {
+      console.error(`❌ Erreur lors de l'émission race-reset:`, error);
+    }
   });
   
   // Événements de relais
   socket.on('stint-started', (data) => {
-    socket.to(`race-${data.raceId}`).emit('stint-started', data);
-    console.log(`▶️ Relais démarré: ${data.driverName} dans la course ${data.raceId}`);
+    try {
+      socket.to(`race-${data.raceId}`).emit('stint-started', data);
+      console.log(`▶️ Relais démarré: ${data.driverName} dans la course ${data.raceId}`);
+    } catch (error) {
+      console.error(`❌ Erreur lors de l'émission stint-started:`, error);
+    }
   });
   
   socket.on('stint-ended', (data) => {
-    socket.to(`race-${data.raceId}`).emit('stint-ended', data);
-    console.log(`⏹️ Relais terminé: ${data.driverName} dans la course ${data.raceId}`);
+    try {
+      socket.to(`race-${data.raceId}`).emit('stint-ended', data);
+      console.log(`⏹️ Relais terminé: ${data.driverName} dans la course ${data.raceId}`);
+    } catch (error) {
+      console.error(`❌ Erreur lors de l'émission stint-ended:`, error);
+    }
   });
   
   // Événements de pilotes
   socket.on('driver-changed', (data) => {
-    socket.to(`race-${data.raceId}`).emit('driver-changed', data);
-    console.log(`👤 Pilote changé: ${data.driverName} dans la course ${data.raceId}`);
+    try {
+      socket.to(`race-${data.raceId}`).emit('driver-changed', data);
+      console.log(`👤 Pilote changé: ${data.driverName} dans la course ${data.raceId}`);
+    } catch (error) {
+      console.error(`❌ Erreur lors de l'émission driver-changed:`, error);
+    }
   });
   
   socket.on('driver-added', (data) => {
-    socket.to(`race-${data.raceId}`).emit('driver-added', data);
-    console.log(`➕ Pilote ajouté: ${data.driverName}`);
+    try {
+      socket.to(`race-${data.raceId}`).emit('driver-added', data);
+      console.log(`➕ Pilote ajouté: ${data.driverName}`);
+    } catch (error) {
+      console.error(`❌ Erreur lors de l'émission driver-added:`, error);
+    }
   });
   
   socket.on('driver-removed', (data) => {
-    socket.to(`race-${data.raceId}`).emit('driver-removed', data);
-    console.log(`➖ Pilote supprimé: ${data.driverId}`);
+    try {
+      socket.to(`race-${data.raceId}`).emit('driver-removed', data);
+      console.log(`➖ Pilote supprimé: ${data.driverId}`);
+    } catch (error) {
+      console.error(`❌ Erreur lors de l'émission driver-removed:`, error);
+    }
   });
   
   // Événements de paramètres
   socket.on('race-settings-updated', (data) => {
-    socket.to(`race-${data.raceId}`).emit('race-settings-updated', data);
-    console.log(`⚙️ Paramètres mis à jour pour la course ${data.raceId}`);
+    try {
+      socket.to(`race-${data.raceId}`).emit('race-settings-updated', data);
+      console.log(`⚙️ Paramètres mis à jour pour la course ${data.raceId}`);
+    } catch (error) {
+      console.error(`❌ Erreur lors de l'émission race-settings-updated:`, error);
+    }
   });
   
   // Demander l'état actuel de la course
   socket.on('request-race-state', (raceId) => {
-    socket.to(`race-${raceId}`).emit('race-state-requested', {
-      raceId,
-      requesterId: socket.id,
-      timestamp: Date.now()
-    });
+    try {
+      socket.to(`race-${raceId}`).emit('race-state-requested', {
+        raceId,
+        requesterId: socket.id,
+        timestamp: Date.now()
+      });
+    } catch (error) {
+      console.error(`❌ Erreur lors de l'émission request-race-state:`, error);
+    }
   });
   
   // Émettre l'état actuel de la course
   socket.on('emit-race-state', (data) => {
-    socket.to(`race-${data.raceId}`).emit('race-state-updated', data);
-    console.log(`🔄 État de la course émis pour ${data.raceId}`);
-  });
-  
-  // Déconnexion
-  socket.on('disconnect', () => {
-    console.log(`🔌 Client déconnecté: ${socket.id}`);
+    try {
+      socket.to(`race-${data.raceId}`).emit('race-state-updated', data);
+      console.log(`🔄 État de la course émis pour ${data.raceId}`);
+    } catch (error) {
+      console.error(`❌ Erreur lors de l'émission emit-race-state:`, error);
+    }
   });
 });
 
@@ -274,6 +336,8 @@ server.listen(PORT, () => {
   console.log(`🚀 Serveur démarré sur le port ${PORT}`);
   console.log(`API disponible sur http://localhost:${PORT}/api`);
   console.log(`📁 Environnement: ${process.env.NODE_ENV || 'development'}`);
-  console.log(`🌐 CORS autorisé pour: ${allowedOrigins.join(', ')}`);
   console.log(`🔌 Socket.IO activé pour la collaboration en temps réel`);
+  console.log(`🌐 CORS configuré pour la production`);
+  console.log(`📡 Transports Socket.IO: websocket, polling`);
+  console.log(`⏱️ Timeout: ${process.env.NODE_ENV === 'production' ? '60s' : '30s'}`);
 }); 

@@ -5,6 +5,7 @@ import WeatherWidget from '../components/WeatherWidget';
 import CollaborationStatus from '../components/CollaborationStatus';
 import RealtimeNotifications from '../components/RealtimeNotifications';
 import MobileMenu from '../components/MobileMenu';
+import SocketDiagnostics from '../components/SocketDiagnostics';
 import socketService from '../services/socketService';
 import * as XLSX from 'xlsx';
 
@@ -1928,6 +1929,7 @@ const KartingEnduranceApp = () => {
             {/* Colonne 1 : Widget météo + Statut collaboration - caché sur mobile */}
             <div className="hidden lg:block lg:col-span-3 space-y-6">
               <WeatherWidget city={raceSettings.city} />
+              <CollaborationStatus raceId={currentRace?._id} />
                      {/* Statistiques rapides */}
                      <div className="bg-white border border-gray-200 rounded-xl shadow-lg p-4 sm:p-6">
                 <h3 className="text-base sm:text-lg font-semibold mb-3 sm:mb-4 text-gray-800 flex items-center">
@@ -2785,6 +2787,9 @@ const KartingEnduranceApp = () => {
 
       {/* Notifications en temps réel */}
       <RealtimeNotifications />
+      
+      {/* Diagnostic Socket.IO (visible en production) */}
+      {process.env.NODE_ENV === 'production' && <SocketDiagnostics />}
     </div>
   );
 };

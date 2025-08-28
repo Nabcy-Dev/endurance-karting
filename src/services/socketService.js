@@ -26,10 +26,18 @@ class SocketService {
 
     this.socket = io(socketUrl, {
       transports: ['websocket', 'polling'],
-      timeout: 10000,
+      timeout: process.env.NODE_ENV === 'production' ? 30000 : 10000,
       reconnection: true,
       reconnectionDelay: 1000,
-      reconnectionAttempts: 5
+      reconnectionAttempts: 10,
+      reconnectionDelayMax: 5000,
+      maxReconnectionAttempts: 10,
+      forceNew: true,
+      autoConnect: true,
+      upgrade: true,
+      rememberUpgrade: true,
+      secure: process.env.NODE_ENV === 'production',
+      rejectUnauthorized: false
     });
 
     this.setupEventListeners();
@@ -50,7 +58,16 @@ class SocketService {
 
     this.socket.on('connect_error', (error) => {
       console.error('❌ Erreur de connexion Socket.IO:', error);
+      console.error('   - Type:', error.type);
+      console.error('   - Message:', error.message);
+      console.error('   - Description:', error.description);
       this.isConnected = false;
+      
+      // En production, essayer de se reconnecter avec polling
+      if (process.env.NODE_ENV === 'production' && this.socket.io.opts.transports.includes('websocket')) {
+        console.log('🔄 Tentative de reconnexion avec polling uniquement...');
+        this.socket.io.opts.transports = ['polling'];
+      }
     });
 
     this.socket.on('reconnect', (attemptNumber) => {
@@ -217,6 +234,26 @@ class SocketService {
       isConnected: this.isConnected,
       currentRaceId: this.currentRaceId,
       socketId: this.socket?.id
+    };
+  }
+
+  // Diagnostic de la connexion
+  getDiagnostics() {
+    if (!this.socket) {
+      return { error: 'Socket non initialisé' };
+    }
+
+    return {
+      connected: this.isConnected,
+      socketId: this.socket.id,
+      transport: this.socket.io?.engine?.transport?.name || 'inconnu',
+      readyState: this.socket.io?.readyState || 'inconnu',
+      url: this.socket.io?.uri || 'inconnu',
+      opts: {
+        transports: this.socket.io?.opts?.transports || [],
+        timeout: this.socket.io?.opts?.timeout || 'inconnu',
+        reconnection: this.socket.io?.opts?.reconnection || false
+      }
     };
   }
 }

@@ -101,7 +101,7 @@ const CollaborationStatus = ({ raceId }) => {
           </div>
 
           {/* Activité récente */}
-          {lastActivity && (
+          {/* {lastActivity && (
             <div className="flex items-center space-x-1">
               <Activity className="w-3 h-3 text-green-500" />
               <span className="text-xs text-gray-500">
@@ -111,7 +111,7 @@ const CollaborationStatus = ({ raceId }) => {
                 })}
               </span>
             </div>
-          )}
+          )} */}
         </div>
       </div>
 
