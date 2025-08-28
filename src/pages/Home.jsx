@@ -180,27 +180,57 @@ const KartingEnduranceApp = () => {
         setRaceStartTime(new Date(activeRace.startTime));
         setIsRunning(true);
         
-              // Vérifier s'il y a un relais en cours
+              console.log('🔍 DIAGNOSTIC COMPLET - DÉBUT DE VÉRIFICATION:', {
+        refreshCount: window.performance.navigation?.type || 'unknown',
+        activeRace: {
+          id: activeRace._id,
+          status: activeRace.status,
+          currentStintStart: activeRace.currentStintStart,
+          currentDriver: activeRace.currentDriver,
+          startTime: activeRace.startTime
+        },
+        timestamp: new Date().toISOString()
+      });
+
+      // Vérifier s'il y a un relais en cours
       if (activeRace.currentStintStart && activeRace.currentDriver) {
         const stintStartTime = new Date(activeRace.currentStintStart);
         const now = Date.now();
         const stintDuration = now - stintStartTime.getTime();
         
+        console.log('🔍 RELAIS DÉTECTÉ DANS LA BASE DE DONNÉES:', {
+          currentStintStart: activeRace.currentStintStart,
+          currentDriver: activeRace.currentDriver,
+          stintStartTime: stintStartTime.toISOString(),
+          stintDuration: stintDuration,
+          stintDurationFormatted: formatTime(stintDuration),
+          isRecent: stintDuration < 4 * 60 * 60 * 1000,
+          timestamp: new Date().toISOString()
+        });
+        
         // Si le relais a commencé il y a moins de 4 heures, on le considère comme en cours
         if (stintDuration < 4 * 60 * 60 * 1000) { // 4 heures au lieu de 2
-          console.log('🔄 Relais en cours détecté au chargement:', {
-            startTime: stintStartTime,
+          console.log('🔄 DÉBUT DE RESTAURATION DU RELAIS:', {
+            startTime: stintStartTime.toISOString(),
             duration: stintDuration,
-            driver: activeRace.currentDriver
+            durationFormatted: formatTime(stintDuration),
+            driver: activeRace.currentDriver,
+            timestamp: new Date().toISOString()
           });
           
           // Marquer le début de la restauration
           setIsRestoring(true);
           
-          // RESTAURATION IMMÉDIATE ET SYNCHRONE
+          // RESTAURATION IMMÉDIATE ET SYNCHRONE - FORCER TOUS LES ÉTATS
           const restoredStintStart = stintStartTime.getTime();
           
-          // Restaurer TOUS les états en une fois
+          console.log('🔧 FORÇAGE DES ÉTATS DE RELAIS:', {
+            restoredStintStart,
+            restoredStintStartFormatted: new Date(restoredStintStart).toISOString(),
+            calculatedDuration: stintDuration
+          });
+          
+          // Restaurer TOUS les états en une fois - FORCER L'ÉTAT
           setRaceStarted(true);
           setRaceStartTime(new Date(activeRace.startTime));
           setIsRunning(true);
@@ -212,15 +242,35 @@ const KartingEnduranceApp = () => {
           const driverIndex = driversResponse.data.findIndex(d => d._id === activeRace.currentDriver);
           if (driverIndex !== -1) {
             setCurrentDriverIndex(driverIndex);
-            console.log('👤 Pilote actuel restauré:', driversResponse.data[driverIndex].name);
+            console.log('👤 Pilote actuel restauré:', driversResponse.data[driverIndex].name, 'à l\'index', driverIndex);
+          } else {
+            console.error('❌ ERREUR: Pilote non trouvé dans la liste!', {
+              searchedId: activeRace.currentDriver,
+              availableDrivers: driversResponse.data.map(d => ({ id: d._id, name: d.name }))
+            });
           }
           
-          console.log('🏁 Course et relais restaurés immédiatement');
+          console.log('🏁 ÉTATS RESTAURÉS - VÉRIFICATION:', {
+            raceStarted: true,
+            isRunning: true,
+            stintRunning: true,
+            currentLapStart: restoredStintStart,
+            currentStintTime: stintDuration,
+            currentDriverIndex: driverIndex
+          });
           
           // Finaliser la restauration après un court délai
           setTimeout(() => {
             setIsRestoring(false);
-            console.log('✅ Restauration du relais terminée');
+            console.log('✅ Restauration du relais terminée - États finaux forcés');
+            
+            // VÉRIFICATION POST-RESTAURATION
+            console.log('🔍 VÉRIFICATION POST-RESTAURATION:', {
+              stintRunning: true, // On force à true
+              currentLapStart: restoredStintStart,
+              currentStintTime: stintDuration,
+              timestamp: new Date().toISOString()
+            });
           }, 100);
         } else {
           console.log('⚠️ Relais trop ancien, pas de relais en cours');
@@ -240,11 +290,19 @@ const KartingEnduranceApp = () => {
           setCurrentStintTime(0);
         }
       } else {
-        console.log('ℹ️ Aucun relais en cours détecté');
+        console.log('ℹ️ Aucun relais en cours détecté - État de la course:', {
+          currentStintStart: activeRace.currentStintStart,
+          currentDriver: activeRace.currentDriver,
+          status: activeRace.status,
+          timestamp: new Date().toISOString()
+        });
         setStintRunning(false);
         setCurrentLapStart(0);
         setCurrentStintTime(0);
       }
+      
+      // SUPPRIMER LA VÉRIFICATION SUPPLÉMENTAIRE QUI CAUSE LE PROBLÈME
+      // Cette logique était trop agressive et éteignait le relais
       }
 
       // Vérifier la cohérence de l'état
@@ -252,18 +310,13 @@ const KartingEnduranceApp = () => {
         const driverIndex = driversResponse.data.findIndex(d => d._id === activeRace.currentDriver);
         if (driverIndex !== -1) {
           setCurrentDriverIndex(driverIndex);
+          console.log('👤 Pilote actuel trouvé et défini:', driversResponse.data[driverIndex].name);
         } else {
           console.warn('⚠️ Pilote actuel non trouvé dans la liste des pilotes');
-          // Nettoyer l'état incohérent
-          try {
-            await raceService.update(activeRace._id, {
-              currentStintStart: null,
-              currentDriver: null
-            });
-            console.log('🧹 État incohérent nettoyé');
-          } catch (err) {
-            console.warn('⚠️ Impossible de nettoyer l\'état incohérent:', err);
-          }
+          console.warn('   - ID recherché:', activeRace.currentDriver);
+          console.warn('   - Pilotes disponibles:', driversResponse.data.map(d => ({ id: d._id, name: d.name })));
+          console.warn('   - AUCUN NETTOYAGE: On garde l\'état pour préserver le relais');
+          // NE PLUS NETTOYER - cela cause la perte du relais !
         }
       }
       
@@ -295,20 +348,106 @@ const KartingEnduranceApp = () => {
         }
       }
       
-      // Marquer l'initialisation comme terminée
-      setIsFullyInitialized(true);
-      console.log('✅ Initialisation complète terminée');
+      // VÉRIFICATION SIMPLIFIÉE: Juste logger l'état sans correction automatique
+      if (stintRunning && currentLapStart > 0) {
+        console.log('🛡️ ÉTAT FINAL APRÈS RESTAURATION:', {
+          local: {
+            stintRunning,
+            currentLapStart: new Date(currentLapStart).toISOString(),
+            currentDriverIndex,
+            drivers: driversResponse.data.length
+          },
+          database: {
+            currentStintStart: activeRace.currentStintStart,
+            currentDriver: activeRace.currentDriver,
+            status: activeRace.status
+          }
+        });
+      }
       
-      // LOG FINAL DE DEBUG
-      console.log('🔍 État final après initialisation:', {
+      // VÉRIFICATION FINALE FORCÉE AVANT DE MARQUER COMME INITIALISÉ
+      console.log('🔍 VÉRIFICATION FINALE AVANT INITIALISATION COMPLÈTE:', {
+        activeRaceHasStint: !!(activeRace.currentStintStart && activeRace.currentDriver),
+        localStintRunning: stintRunning,
+        localCurrentLapStart: currentLapStart,
+        localCurrentStintTime: currentStintTime,
+        isRestoring,
+        timestamp: new Date().toISOString()
+      });
+      
+      // FORCER LA COHÉRENCE SI NÉCESSAIRE
+      if (activeRace.currentStintStart && activeRace.currentDriver && !stintRunning) {
+        console.warn('🚨 INCOHÉRENCE FINALE DÉTECTÉE: Base de données a un relais mais état local non');
+        console.warn('   - CORRECTION FORCÉE EN COURS...');
+        
+        const finalStintStartTime = new Date(activeRace.currentStintStart);
+        const finalNow = Date.now();
+        const finalStintDuration = finalNow - finalStintStartTime.getTime();
+        
+        if (finalStintDuration < 4 * 60 * 60 * 1000) {
+          setStintRunning(true);
+          setIsRunning(true);
+          setCurrentLapStart(finalStintStartTime.getTime());
+          setCurrentStintTime(finalStintDuration);
+          
+          console.log('✅ CORRECTION FORCÉE APPLIQUÉE:', {
+            stintRunning: true,
+            currentLapStart: finalStintStartTime.getTime(),
+            currentStintTime: finalStintDuration,
+            formatted: formatTime(finalStintDuration)
+          });
+        }
+      }
+      
+      // LOG AVANT DE MARQUER COMME INITIALISÉ
+      console.log('🔍 État AVANT marquage comme initialisé:', {
         raceStarted,
         isRunning,
         stintRunning,
         currentLapStart,
         currentStintTime: formatTime(currentStintTime),
         isRestoring,
-        isFullyInitialized
+        isFullyInitialized,
+        databaseState: {
+          currentStintStart: activeRace.currentStintStart,
+          currentDriver: activeRace.currentDriver
+        }
       });
+      
+      // Marquer l'initialisation comme terminée
+      setIsFullyInitialized(true);
+      console.log('✅ Initialisation complète terminée - isFullyInitialized défini à true');
+      
+      // LOG FINAL DE DEBUG (note: isFullyInitialized sera encore false ici à cause du setState asynchrone)
+      console.log('🔍 État FINAL après initialisation (setState asynchrone):', {
+        raceStarted,
+        isRunning,
+        stintRunning,
+        currentLapStart,
+        currentStintTime: formatTime(currentStintTime),
+        isRestoring,
+        isFullyInitialized, // Sera encore false ici
+        willBeFullyInitialized: true, // Mais on sait qu'il sera true
+        databaseState: {
+          currentStintStart: activeRace.currentStintStart,
+          currentDriver: activeRace.currentDriver
+        }
+      });
+      
+      // PROTECTION FINALE: S'assurer qu'on n'émet pas d'état vide
+      if (stintRunning && currentLapStart > 0) {
+        console.log('🛡️ Protection activée: relais en cours détecté, émissions d\'état protégées');
+        
+        // PROTECTION CRITIQUE: Empêcher l'extinction du relais
+        console.log('🔒 RELAIS PROTÉGÉ CONTRE L\'EXTINCTION');
+        console.log('   - État local:', { stintRunning, currentLapStart: new Date(currentLapStart).toISOString() });
+        console.log('   - Base de données:', { 
+          currentStintStart: activeRace.currentStintStart, 
+          currentDriver: activeRace.currentDriver 
+        });
+      } else {
+        console.log('ℹ️ Aucun relais en cours, émissions d\'état normales');
+      }
 
     } catch (err) {
       console.error('Erreur d\'initialisation:', err);
@@ -321,6 +460,61 @@ const KartingEnduranceApp = () => {
   useEffect(() => {
     initializeApp();
   }, [initializeApp]);
+
+  // USEEFFECT SPÉCIAL POUR FORCER LA COHÉRENCE APRÈS INITIALISATION
+  useEffect(() => {
+    if (isFullyInitialized && currentRace && !isRestoring) {
+      console.log('🔍 VÉRIFICATION POST-INITIALISATION (isFullyInitialized = true):', {
+        currentRaceHasStint: !!(currentRace.currentStintStart && currentRace.currentDriver),
+        localStintRunning: stintRunning,
+        localCurrentLapStart: currentLapStart,
+        timestamp: new Date().toISOString()
+      });
+      
+      // CORRECTION FORCÉE SI INCOHÉRENCE DÉTECTÉE
+      if (currentRace.currentStintStart && currentRace.currentDriver && !stintRunning) {
+        console.warn('🚨 INCOHÉRENCE POST-INITIALISATION: Correction forcée nécessaire');
+        
+        const correctionStintStart = new Date(currentRace.currentStintStart);
+        const correctionNow = Date.now();
+        const correctionDuration = correctionNow - correctionStintStart.getTime();
+        
+        if (correctionDuration < 4 * 60 * 60 * 1000) {
+          console.log('🔧 CORRECTION FORCÉE POST-INITIALISATION:', {
+            from: { stintRunning, currentLapStart },
+            to: { 
+              stintRunning: true, 
+              currentLapStart: correctionStintStart.getTime(),
+              currentStintTime: correctionDuration
+            }
+          });
+          
+          setStintRunning(true);
+          setIsRunning(true);
+          setCurrentLapStart(correctionStintStart.getTime());
+          setCurrentStintTime(correctionDuration);
+        }
+      }
+    }
+  }, [isFullyInitialized, currentRace, isRestoring, stintRunning, currentLapStart]);
+
+  // USEEFFECT POUR VÉRIFIER QUAND isFullyInitialized DEVIENT TRUE
+  useEffect(() => {
+    if (isFullyInitialized) {
+      console.log('✅ isFullyInitialized est maintenant TRUE');
+      console.log('🔍 État au moment où isFullyInitialized devient true:', {
+        raceStarted,
+        isRunning,
+        stintRunning,
+        currentLapStart,
+        currentStintTime: formatTime(currentStintTime),
+        isRestoring,
+        currentRace: !!currentRace,
+        hasStintInDB: !!(currentRace?.currentStintStart && currentRace?.currentDriver),
+        timestamp: new Date().toISOString()
+      });
+    }
+  }, [isFullyInitialized, raceStarted, isRunning, stintRunning, currentLapStart, currentStintTime, isRestoring, currentRace]);
 
   // Configuration des écouteurs Socket.IO pour la collaboration en temps réel
   useEffect(() => {
@@ -340,6 +534,11 @@ const KartingEnduranceApp = () => {
     // Vérifier après un délai
     setTimeout(checkConnection, 1000);
     
+    // PROTECTION: Empêcher la perte d'état pendant la connexion Socket.IO
+    if (stintRunning && currentLapStart > 0) {
+      console.log('🛡️ PROTECTION SOCKET.IO: Relais en cours détecté, protection activée');
+    }
+    
     if (!currentRace?._id) return;
     
     // Demander l'état actuel de la course aux autres clients
@@ -349,15 +548,28 @@ const KartingEnduranceApp = () => {
     // Émettre l'état actuel pour synchroniser les autres clients
     // ATTENTION: Ne pas émettre si l'état n'est pas encore initialisé
     setTimeout(() => {
+      console.log('🔄 Vérification avant émission d\'état:', {
+        isConnected: socketService.getConnectionStatus().isConnected,
+        isFullyInitialized,
+        isRestoring,
+        currentRace: !!currentRace,
+        raceStatus: currentRace?.status,
+        hasStintStart: !!currentRace?.currentStintStart,
+        stintRunning,
+        currentLapStart,
+        timestamp: new Date().toISOString()
+      });
+      
+      // PROTECTION RENFORCÉE: Ne jamais émettre d'état vide ou incohérent
       if (socketService.getConnectionStatus().isConnected && 
-          isFullyInitialized && // ATTENTION: Attendre que l'initialisation soit terminée
-          !isRestoring && // ATTENTION: Attendre que la restauration soit terminée
+          isFullyInitialized && 
+          !isRestoring && 
           currentRace && 
-          currentRace.status === 'running' &&
-          currentRace.currentStintStart) {
+          currentRace.status === 'running') {
         
-        // Vérifier que l'état est cohérent avant d'émettre
-        if (stintRunning && currentLapStart > 0) {
+        // SEULEMENT émettre si on a vraiment un relais en cours
+        if (stintRunning && currentLapStart > 0 && currentRace.currentStintStart) {
+          const currentSocketId = socketService.getConnectionStatus().socketId;
           socketService.emitRaceState(currentRace._id, {
             raceStarted: true,
             isRunning: true,
@@ -365,16 +577,26 @@ const KartingEnduranceApp = () => {
             currentDriverIndex,
             currentLapStart,
             raceStartTime: raceStartTime || new Date(currentRace.startTime),
-            timestamp: Date.now()
+            timestamp: Date.now(),
+            socketId: currentSocketId,
+            source: 'race-sync'
           });
-          console.log('🔄 État cohérent émis pour synchronisation');
+          console.log('✅ État cohérent émis pour synchronisation (Socket ID:', currentSocketId, ')');
         } else {
-          console.log('⚠️ État incohérent, pas d\'émission pour éviter la contamination');
+          console.log('🚫 PAS D\'ÉMISSION: Aucun relais en cours détecté');
+          console.log('   - stintRunning:', stintRunning);
+          console.log('   - currentLapStart:', currentLapStart);
+          console.log('   - currentRace.currentStintStart:', currentRace.currentStintStart);
         }
       } else {
-        console.log('ℹ️ Pas d\'émission d\'état: initialisation/restauration non terminée ou course non démarrée');
+        console.log('🚫 PAS D\'ÉMISSION: Conditions non remplies');
+        console.log('   - isConnected:', socketService.getConnectionStatus().isConnected);
+        console.log('   - isFullyInitialized:', isFullyInitialized);
+        console.log('   - isRestoring:', isRestoring);
+        console.log('   - currentRace:', !!currentRace);
+        console.log('   - raceStatus:', currentRace?.status);
       }
-    }, 3500); // Délai ajusté pour s'assurer que la restauration est terminée
+    }, 3500);
 
     // Écouter les événements de course
     const handleRaceStarted = (data) => {
@@ -498,8 +720,35 @@ const KartingEnduranceApp = () => {
     // Écouter la demande d'état de la course
     const handleRaceStateRequested = (data) => {
       if (data.raceId === currentRace._id) {
-        console.log('🔌 Demande d\'état de la course reçue, émission de l\'état actuel');
-        // Émettre l'état actuel de la course
+        console.log('🔌 Demande d\'état de la course reçue de:', data.requesterId);
+        
+        // PROTECTION RENFORCÉE: Conditions strictes pour émettre un état
+        console.log('🔄 Vérification avant réponse à la demande d\'état:', {
+          isFullyInitialized,
+          isRestoring,
+          stintRunning,
+          currentLapStart,
+          hasRaceStintStart: !!currentRace?.currentStintStart,
+          timestamp: new Date().toISOString()
+        });
+        
+        // PROTECTION: Ne pas émettre si on n'a pas d'état cohérent
+        if (!isFullyInitialized || isRestoring) {
+          console.log('🚫 PAS D\'ÉMISSION: initialisation non terminée ou restauration en cours');
+          return;
+        }
+        
+        // PROTECTION CRITIQUE: Ne pas émettre si on n'a pas de relais en cours
+        if (!stintRunning || !currentLapStart || !currentRace?.currentStintStart) {
+          console.log('🚫 PAS D\'ÉMISSION: aucun relais en cours détecté');
+          console.log('   - stintRunning:', stintRunning);
+          console.log('   - currentLapStart:', currentLapStart);
+          console.log('   - currentRace.currentStintStart:', currentRace?.currentStintStart);
+          return;
+        }
+        
+        // Émettre l'état actuel de la course SEULEMENT si on a un relais valide
+        const currentSocketId = socketService.getConnectionStatus().socketId;
         socketService.emitRaceState(currentRace._id, {
           raceStarted,
           isRunning,
@@ -507,8 +756,12 @@ const KartingEnduranceApp = () => {
           currentDriverIndex,
           currentLapStart,
           raceStartTime,
-          timestamp: Date.now()
+          timestamp: Date.now(),
+          socketId: currentSocketId,
+          source: 'race-state-requested'
         });
+        
+        console.log('✅ État valide émis en réponse à la demande (Socket ID:', currentSocketId, ')');
       }
     };
     
@@ -518,18 +771,64 @@ const KartingEnduranceApp = () => {
         console.log('🔌 État de la course reçu, synchronisation...');
         console.log('   - Données reçues:', data);
         
-        // PROTECTION: Ne pas traiter les états vides qui pourraient terminer la course
+        // PROTECTION RENFORCÉE: Ne pas traiter les états vides ou incohérents
         if (!data || Object.keys(data).length === 0) {
           console.warn('⚠️ État vide reçu, ignoré pour éviter la contamination');
           return;
         }
         
-        // PROTECTION: Vérifier que l'état reçu est cohérent
-        if (data.stintRunning === false && data.isRunning === false && 
-            stintRunning === true && isRunning === true) {
-          console.warn('⚠️ Tentative de terminer un relais en cours, ignorée');
+        // PROTECTION CRITIQUE: Empêcher l'arrêt d'un relais en cours
+        if (stintRunning && isRunning && currentLapStart > 0) {
+          console.log('🛡️ PROTECTION ACTIVE: Relais en cours détecté, vérification de l\'état reçu...');
+          
+          // Si on a un relais en cours localement, vérifier que l'état reçu est cohérent
+          if (data.stintRunning === false || data.isRunning === false) {
+            console.warn('🚫 TENTATIVE DE CONTAMINATION DÉTECTÉE: État reçu tente d\'arrêter un relais en cours');
+            console.warn('   - État local: relais en cours depuis', new Date(currentLapStart).toLocaleTimeString());
+            console.warn('   - État reçu:', {
+              stintRunning: data.stintRunning,
+              isRunning: data.isRunning,
+              source: data.source,
+              socketId: data.socketId,
+              timestamp: data.timestamp ? new Date(data.timestamp).toLocaleTimeString() : 'N/A'
+            });
+            console.warn('   - PROTECTION ACTIVÉE: État ignoré');
+            return; // PROTECTION: Ne pas traiter cet état
+          }
+          
+          // Vérifier que l'état reçu est cohérent avec le relais en cours
+          if (data.currentLapStart && Math.abs(data.currentLapStart - currentLapStart) > 10000) { // Plus de 10 secondes de différence
+            console.warn('🚫 État reçu incohérent: temps de début trop différent');
+            console.warn('   - Temps local:', new Date(currentLapStart).toLocaleTimeString());
+            console.warn('   - Temps reçu:', new Date(data.currentLapStart).toLocaleTimeString());
+            console.warn('   - Différence:', Math.abs(data.currentLapStart - currentLapStart) / 1000, 'secondes');
+            return; // PROTECTION: Ne pas traiter cet état
+          }
+          
+          console.log('✅ État reçu validé comme cohérent avec le relais en cours');
+        }
+        
+        // PROTECTION: Vérifier que l'état reçu n'est pas trop ancien
+        if (data.timestamp && (Date.now() - data.timestamp) > 30000) { // Plus de 30 secondes
+          console.warn('🚫 État reçu trop ancien, ignoré:', new Date(data.timestamp).toLocaleTimeString());
           return;
         }
+        
+        // PROTECTION: Vérifier que l'utilisateur qui envoie l'état est bien connecté
+        if (data.socketId && data.socketId === socketService.getConnectionStatus().socketId) {
+          console.warn('🚫 Tentative d\'auto-synchronisation détectée, ignorée');
+          return;
+        }
+        
+        // PROTECTION SUPPLÉMENTAIRE: Ignorer les états "vides" de nouveaux utilisateurs
+        if (data.source === 'race-sync' && !data.stintRunning && !data.currentLapStart) {
+          console.warn('🚫 État vide de synchronisation initial détecté et ignoré');
+          console.warn('   - Source:', data.source);
+          console.warn('   - Socket ID:', data.socketId);
+          return;
+        }
+        
+        console.log('✅ État reçu validé, synchronisation en cours...');
         
         // Synchroniser TOUS les états en une fois
         const updates = {};
@@ -673,6 +972,15 @@ const KartingEnduranceApp = () => {
       if (raceStarted && isRunning && currentLapStart > 0) {
         const stintTime = now - currentLapStart;
         setCurrentStintTime(stintTime);
+        
+        // VÉRIFICATION SIMPLIFIÉE: Juste logger les incohérences sans correction automatique
+        if (stintRunning && (stintTime < 0 || stintTime > 24 * 60 * 60 * 1000)) {
+          console.warn('⚠️ Temps de relais incohérent en temps réel (mais pas de correction):', {
+            stintTime: formatTime(stintTime),
+            currentLapStart: new Date(currentLapStart).toISOString(),
+            now: new Date(now).toISOString()
+          });
+        }
       }
     }, 100);
 
@@ -681,7 +989,7 @@ const KartingEnduranceApp = () => {
         clearInterval(timeIntervalRef.current);
       }
     };
-  }, [raceStarted, isRunning, currentLapStart]);
+  }, [raceStarted, isRunning, currentLapStart, stintRunning]);
   
   // FORCER la mise à jour du chronomètre quand le relais est restauré
   useEffect(() => {
@@ -690,6 +998,15 @@ const KartingEnduranceApp = () => {
       const stintTime = now - currentLapStart;
       setCurrentStintTime(stintTime);
       console.log('⏱️ Chronomètre forcé mis à jour:', formatTime(stintTime));
+      
+      // VÉRIFICATION SIMPLIFIÉE: Juste logger si le temps est incohérent
+      if (stintTime < 0 || stintTime > 24 * 60 * 60 * 1000) { // Plus de 24 heures
+        console.warn('⚠️ Temps de relais incohérent détecté (mais pas de correction automatique):', {
+          stintTime: formatTime(stintTime),
+          currentLapStart: new Date(currentLapStart).toISOString(),
+          now: new Date(now).toISOString()
+        });
+      }
     }
   }, [stintRunning, currentLapStart, isRestoring]);
 
@@ -815,6 +1132,7 @@ const KartingEnduranceApp = () => {
         });
         
         // Émettre l'état complet de la course pour synchroniser tous les clients
+        const currentSocketId = socketService.getConnectionStatus().socketId;
         socketService.emitRaceState(currentRace._id, {
           raceStarted: true,
           isRunning: true,
@@ -822,7 +1140,9 @@ const KartingEnduranceApp = () => {
           currentDriverIndex: currentDriverIndex,
           currentLapStart: now,
           raceStartTime: raceStarted ? raceStartTime : now,
-          timestamp: Date.now()
+          timestamp: Date.now(),
+          socketId: currentSocketId,
+          source: 'stint-started'
         });
         
         console.log('🚀 Relais démarré et état émis à tous les clients');
@@ -909,6 +1229,7 @@ const KartingEnduranceApp = () => {
         });
         
         // Émettre l'état complet de la course pour synchroniser tous les clients
+        const currentSocketId = socketService.getConnectionStatus().socketId;
         socketService.emitRaceState(currentRace._id, {
           raceStarted: true,
           isRunning: false,
@@ -916,7 +1237,9 @@ const KartingEnduranceApp = () => {
           currentDriverIndex: currentDriverIndex,
           currentLapStart: 0,
           raceStartTime: raceStartTime,
-          timestamp: Date.now()
+          timestamp: Date.now(),
+          socketId: currentSocketId,
+          source: 'stint-ended'
         });
         
         console.log('⏹️ Relais terminé et état émis à tous les clients');
@@ -954,6 +1277,7 @@ const KartingEnduranceApp = () => {
         });
         
         // Émettre l'état complet de la course pour synchroniser tous les clients
+        const currentSocketId = socketService.getConnectionStatus().socketId;
         socketService.emitRaceState(currentRace._id, {
           raceStarted,
           isRunning,
@@ -961,7 +1285,9 @@ const KartingEnduranceApp = () => {
           currentDriverIndex: newIndex,
           currentLapStart,
           raceStartTime,
-          timestamp: Date.now()
+          timestamp: Date.now(),
+          socketId: currentSocketId,
+          source: 'driver-changed'
         });
       }
     } catch (err) {
