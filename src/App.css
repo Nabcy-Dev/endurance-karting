@@ -113,3 +113,30 @@
   background: #cbd5e0;
   border-radius: 2px;
 }
+
+/* Optimisations pour les notifications sur mobile */
+@media (max-width: 640px) {
+  .notification-mobile {
+    font-size: 0.75rem;
+    line-height: 1rem;
+  }
+  
+  .notification-mobile .icon {
+    width: 1rem;
+    height: 1rem;
+  }
+  
+  .notification-mobile .title {
+    font-size: 0.75rem;
+    font-weight: 600;
+  }
+  
+  .notification-mobile .message {
+    font-size: 0.75rem;
+    line-height: 1.125rem;
+  }
+  
+  .notification-mobile .timestamp {
+    font-size: 0.625rem;
+  }
+}

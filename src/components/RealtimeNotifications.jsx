@@ -168,37 +168,37 @@ const RealtimeNotifications = () => {
   }
 
   return (
-    <div className="fixed top-4 right-4 z-50 space-y-2 max-w-sm">
+    <div className="fixed top-2 right-2 sm:top-4 sm:right-4 z-50 space-y-1 sm:space-y-2 max-w-xs sm:max-w-sm">
       {notifications.map((notification) => {
         const Icon = notification.icon;
         return (
-          <div
-            key={notification.id}
-            className={`${notification.color} text-white rounded-lg shadow-lg p-4 transform transition-all duration-300 ease-in-out`}
-          >
-            <div className="flex items-start space-x-3">
-              <Icon className="w-5 h-5 mt-0.5 flex-shrink-0" />
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center justify-between">
-                  <h4 className="font-semibold text-sm">{notification.title}</h4>
-                  <button
-                    onClick={() => removeNotification(notification.id)}
-                    className="text-white hover:text-gray-200 transition-colors"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
-                </div>
-                <p className="text-sm mt-1 opacity-90">{notification.message}</p>
-                <div className="text-xs opacity-75 mt-2">
-                  {notification.timestamp.toLocaleTimeString('fr-FR', {
-                    hour: '2-digit',
-                    minute: '2-digit',
-                    second: '2-digit'
-                  })}
-                </div>
+                  <div
+          key={notification.id}
+          className={`${notification.color} text-white rounded-lg shadow-lg p-2 sm:p-4 transform transition-all duration-300 ease-in-out notification-mobile`}
+        >
+          <div className="flex items-start space-x-2 sm:space-x-3">
+            <Icon className="w-4 h-4 sm:w-5 sm:h-5 mt-0.5 flex-shrink-0 icon" />
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center justify-between">
+                <h4 className="font-semibold text-xs sm:text-sm title">{notification.title}</h4>
+                <button
+                  onClick={() => removeNotification(notification.id)}
+                  className="text-white hover:text-gray-200 transition-colors p-1"
+                >
+                  <X className="w-3 h-3 sm:w-4 sm:h-4" />
+                </button>
+              </div>
+              <p className="text-xs sm:text-sm mt-1 opacity-90 leading-tight message">{notification.message}</p>
+              <div className="text-xs opacity-75 mt-1 sm:mt-2 timestamp">
+                {notification.timestamp.toLocaleTimeString('fr-FR', {
+                  hour: '2-digit',
+                  minute: '2-digit',
+                  second: '2-digit'
+                })}
               </div>
             </div>
           </div>
+        </div>
         );
       })}
       
@@ -208,7 +208,8 @@ const RealtimeNotifications = () => {
             onClick={clearAllNotifications}
             className="text-xs text-gray-500 hover:text-gray-700 bg-white rounded px-2 py-1 shadow-sm transition-colors"
           >
-            Effacer tout
+            <span className="hidden sm:inline">Effacer tout</span>
+            <span className="sm:hidden">Tout</span>
           </button>
         </div>
       )}
