@@ -51,6 +51,9 @@ const KartingEnduranceApp = () => {
   const [isFullyInitialized, setIsFullyInitialized] = useState(false); // Nouvel état pour éviter les émissions prématurées
   const [isRestoring, setIsRestoring] = useState(false); // État pour indiquer qu'une restauration est en cours
   
+  // Protection contre les actions multiples rapides
+  const [isActionInProgress, setIsActionInProgress] = useState(false);
+  
   // États API
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -471,28 +474,27 @@ const KartingEnduranceApp = () => {
         timestamp: new Date().toISOString()
       });
       
-      // CORRECTION FORCÉE SI INCOHÉRENCE DÉTECTÉE
-      if (currentRace.currentStintStart && currentRace.currentDriver && !stintRunning) {
-        console.warn('🚨 INCOHÉRENCE POST-INITIALISATION: Correction forcée nécessaire');
+      // CORRECTION FORCÉE SI INCOHÉRENCE DÉTECTÉE (SEULEMENT POUR RESTAURATION)
+      if (currentRace.currentStintStart && currentRace.currentDriver && !stintRunning && !isRestoring) {
+        console.warn('🚨 INCOHÉRENCE POST-INITIALISATION: Vérification nécessaire');
         
         const correctionStintStart = new Date(currentRace.currentStintStart);
         const correctionNow = Date.now();
         const correctionDuration = correctionNow - correctionStintStart.getTime();
         
-        if (correctionDuration < 4 * 60 * 60 * 1000) {
-          console.log('🔧 CORRECTION FORCÉE POST-INITIALISATION:', {
-            from: { stintRunning, currentLapStart },
-            to: { 
-              stintRunning: true, 
-              currentLapStart: correctionStintStart.getTime(),
-              currentStintTime: correctionDuration
-            }
+        // PROTECTION: Ne corriger QUE si le relais est récent et cohérent
+        if (correctionDuration < 30 * 60 * 1000) { // Seulement si moins de 30 minutes
+          console.warn('⚠️ RELAIS RÉCENT DÉTECTÉ - CORRECTION LIMITÉE:', {
+            duration: correctionDuration,
+            durationFormatted: formatTime(correctionDuration),
+            isRecent: true
           });
           
-          setStintRunning(true);
-          setIsRunning(true);
-          setCurrentLapStart(correctionStintStart.getTime());
-          setCurrentStintTime(correctionDuration);
+          // NE PAS corriger automatiquement - juste logger
+          console.warn('🚫 CORRECTION AUTOMATIQUE DÉSACTIVÉE pour éviter les démarrages intempestifs');
+          console.warn('   - Pour restaurer manuellement, rafraîchir la page');
+        } else {
+          console.log('ℹ️ Relais trop ancien, pas de correction automatique');
         }
       }
     }
@@ -672,12 +674,15 @@ const KartingEnduranceApp = () => {
       if (data.raceId === currentRace._id) {
         console.log('🔌 Événement reçu: Relais terminé par un autre utilisateur');
         console.log('   - Données reçues:', data);
+        console.log('   - État local avant:', { stintRunning, isRunning, currentLapStart, currentStintTime });
         
         // Mettre à jour l'état local immédiatement
         setStintRunning(false);
         setIsRunning(false);
         setCurrentStintTime(0);
         setCurrentLapStart(0);
+        
+        console.log('✅ État local mis à jour: relais arrêté');
         
         // Recharger les données de la course pour avoir l'historique à jour
         setTimeout(() => {
@@ -777,23 +782,34 @@ const KartingEnduranceApp = () => {
           return;
         }
         
-        // PROTECTION CRITIQUE: Empêcher l'arrêt d'un relais en cours
+        // PROTECTION CRITIQUE: Empêcher l'arrêt d'un relais en cours (sauf si légitime)
         if (stintRunning && isRunning && currentLapStart > 0) {
           console.log('🛡️ PROTECTION ACTIVE: Relais en cours détecté, vérification de l\'état reçu...');
           
           // Si on a un relais en cours localement, vérifier que l'état reçu est cohérent
           if (data.stintRunning === false || data.isRunning === false) {
-            console.warn('🚫 TENTATIVE DE CONTAMINATION DÉTECTÉE: État reçu tente d\'arrêter un relais en cours');
-            console.warn('   - État local: relais en cours depuis', new Date(currentLapStart).toLocaleTimeString());
-            console.warn('   - État reçu:', {
-              stintRunning: data.stintRunning,
-              isRunning: data.isRunning,
-              source: data.source,
-              socketId: data.socketId,
-              timestamp: data.timestamp ? new Date(data.timestamp).toLocaleTimeString() : 'N/A'
-            });
-            console.warn('   - PROTECTION ACTIVÉE: État ignoré');
-            return; // PROTECTION: Ne pas traiter cet état
+            // PROTECTION AMÉLIORÉE: Autoriser les arrêts légitimes
+            if (data.source === 'stint-ended' || 
+                data.source === 'race-state-requested' ||
+                data.source === 'endStint' ||
+                (data.timestamp && (Date.now() - data.timestamp) < 5000)) { // Récent = probablement légitime
+              console.log('✅ ARRÊT LÉGITIME DÉTECTÉ: Source autorisée:', data.source);
+              console.log('   - État local: relais en cours depuis', new Date(currentLapStart).toLocaleTimeString());
+              console.log('   - État reçu: arrêt légitime autorisé');
+              // Continuer le traitement pour arrêter le relais
+            } else {
+              console.warn('🚫 TENTATIVE DE CONTAMINATION DÉTECTÉE: État reçu tente d\'arrêter un relais en cours');
+              console.warn('   - État local: relais en cours depuis', new Date(currentLapStart).toLocaleTimeString());
+              console.warn('   - État reçu:', {
+                stintRunning: data.stintRunning,
+                isRunning: data.isRunning,
+                source: data.source,
+                socketId: data.socketId,
+                timestamp: data.timestamp ? new Date(data.timestamp).toLocaleTimeString() : 'N/A'
+              });
+              console.warn('   - PROTECTION ACTIVÉE: État ignoré');
+              return; // PROTECTION: Ne pas traiter cet état
+            }
           }
           
           // Vérifier que l'état reçu est cohérent avec le relais en cours
@@ -1080,6 +1096,15 @@ const KartingEnduranceApp = () => {
   const startStint = async () => {
     if (!currentRace || !drivers[currentDriverIndex]) return;
     
+    // Protection contre les actions multiples rapides
+    if (isActionInProgress) {
+      console.log('⚠️ Action en cours, démarrage de relais ignoré');
+      return;
+    }
+    
+    setIsActionInProgress(true);
+    console.log('🚀 Démarrage de relais en cours...');
+    
     try {
       // Si c'est le premier relais, démarrer la course automatiquement
       if (!raceStarted) {
@@ -1149,15 +1174,32 @@ const KartingEnduranceApp = () => {
       } else {
         console.warn('⚠️ Socket.IO non connecté, impossible d\'émettre les événements');
       }
+      
+      console.log('✅ Démarrage de relais terminé');
     } catch (err) {
       console.error('Erreur lors du démarrage du relais:', err);
       setError('Erreur lors du démarrage du relais');
+    } finally {
+      // Libérer le verrou après un délai
+      setTimeout(() => {
+        setIsActionInProgress(false);
+        console.log('🔓 Verrou d\'action libéré');
+      }, 1000);
     }
   };
 
   // Terminer un relais
   const endStint = async () => {
     if (!stintRunning || !currentRace || !drivers[currentDriverIndex]) return;
+    
+    // Protection contre les actions multiples rapides
+    if (isActionInProgress) {
+      console.log('⚠️ Action en cours, fin de relais ignorée');
+      return;
+    }
+    
+    setIsActionInProgress(true);
+    console.log('⏹️ Fin de relais en cours...');
     
     try {
       setIsRunning(false);
@@ -1246,9 +1288,17 @@ const KartingEnduranceApp = () => {
       } else {
         console.warn('⚠️ Socket.IO non connecté, impossible d\'émettre les événements');
       }
+      
+      console.log('✅ Fin de relais terminée');
     } catch (err) {
       console.error('Erreur lors de la fin du relais:', err);
       setError('Erreur lors de la fin du relais');
+    } finally {
+      // Libérer le verrou après un délai
+      setTimeout(() => {
+        setIsActionInProgress(false);
+        console.log('🔓 Verrou d\'action libéré');
+      }, 1000);
     }
   };
 
@@ -1261,6 +1311,15 @@ const KartingEnduranceApp = () => {
       console.log('⚠️ Impossible de changer de pilote pendant un relais en cours');
       return; // Pas d'erreur visible, juste empêcher l'action
     }
+    
+    // Protection contre les actions multiples rapides
+    if (isActionInProgress) {
+      console.log('⚠️ Action en cours, changement de pilote ignoré');
+      return;
+    }
+    
+    setIsActionInProgress(true);
+    console.log('🔄 Changement de pilote en cours:', drivers[newIndex].name);
     
     try {
       setCurrentDriverIndex(newIndex);
@@ -1290,9 +1349,17 @@ const KartingEnduranceApp = () => {
           source: 'driver-changed'
         });
       }
+      
+      console.log('✅ Changement de pilote terminé:', drivers[newIndex].name);
     } catch (err) {
       console.error('Erreur lors du changement de pilote:', err);
       setError('Erreur lors du changement de pilote');
+    } finally {
+      // Libérer le verrou après un délai
+      setTimeout(() => {
+        setIsActionInProgress(false);
+        console.log('🔓 Verrou d\'action libéré');
+      }, 1000);
     }
   };
 
@@ -2520,19 +2587,38 @@ const KartingEnduranceApp = () => {
                   {!stintRunning ? (
                     <button
                       onClick={startStint}
-                      disabled={!drivers[currentDriverIndex]}
+                      disabled={!drivers[currentDriverIndex] || isActionInProgress}
                       className="flex items-center justify-center space-x-2 px-4 sm:px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm sm:text-base"
                     >
-                      <Play className="w-4 h-4 sm:w-5 sm:h-5" />
-                      <span>Démarrer relais</span>
+                      {isActionInProgress ? (
+                        <>
+                          <RefreshCw className="w-4 h-4 sm:w-5 sm:h-5 animate-spin" />
+                          <span>En cours...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Play className="w-4 h-4 sm:w-5 sm:h-5" />
+                          <span>Démarrer relais</span>
+                        </>
+                      )}
                     </button>
                   ) : (
                     <button
                       onClick={endStint}
-                      className="flex items-center justify-center space-x-2 px-4 sm:px-6 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-sm sm:text-base"
+                      disabled={isActionInProgress}
+                      className="flex items-center justify-center space-x-2 px-4 sm:px-6 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm sm:text-base"
                     >
-                      <Pause className="w-4 h-4 sm:w-5 sm:h-5" />
-                      <span>Terminer relais</span>
+                      {isActionInProgress ? (
+                        <>
+                          <RefreshCw className="w-4 h-4 sm:w-5 sm:h-5 animate-spin" />
+                          <span>En cours...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Pause className="w-4 h-4 sm:w-5 sm:h-5" />
+                          <span>Terminer relais</span>
+                        </>
+                      )}
                     </button>
                   )}
                 </div>
@@ -2597,15 +2683,15 @@ const KartingEnduranceApp = () => {
                       <div 
                         key={driver._id} 
                         className={`p-3 rounded-lg border-2 transition-colors ${
-                          stintRunning 
-                            ? 'opacity-50 cursor-not-allowed' // Grisé et non-cliquable pendant un relais
+                          stintRunning || isActionInProgress
+                            ? 'opacity-50 cursor-not-allowed' // Grisé et non-cliquable pendant un relais ou action
                             : 'cursor-pointer hover:border-gray-300' // Normal et cliquable
                         } ${
                           index === currentDriverIndex 
                             ? 'border-blue-500 bg-blue-50' 
                             : 'border-gray-200'
                         }`}
-                        onClick={() => !stintRunning && changeDriver(index)}
+                        onClick={() => !stintRunning && !isActionInProgress && changeDriver(index)}
                       >
                         <div className="flex items-center justify-between">
                           <div className="flex items-center space-x-3">
