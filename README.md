@@ -1,6 +1,6 @@
-# Karting Endurance - Système de gestion des relais
+# Karting Endurance 🏁 - Système de gestion des relais
 
-Application React pour la gestion des courses de karting endurance avec API MongoDB.
+Application **collaborative en temps réel** pour la gestion des courses de karting endurance avec API MongoDB et synchronisation instantanée entre utilisateurs.
 
 ## 🚀 Installation et démarrage
 
@@ -52,6 +52,13 @@ npm run dev
 # Ou séparément :
 npm run server  # Backend uniquement
 npm start       # Frontend uniquement
+```
+
+6. **Tester la collaboration en temps réel**
+```bash
+# Ouvrez l'application dans 2 onglets différents
+# Effectuez une action dans le premier onglet
+# Observez la synchronisation automatique dans le second
 ```
 
 ## 📁 Structure du projet
@@ -195,12 +202,24 @@ karting-endurance/
 - ✅ Gestion d'erreurs
 - ✅ États de chargement
 
+## 🔄 Collaboration en temps réel
+
+- ✅ **Synchronisation instantanée** de toutes les actions
+- ✅ **Notifications en temps réel** pour chaque événement
+- ✅ **Interface collaborative** avec indicateur de statut
+- ✅ **Support multi-appareils** simultanés
+- ✅ **WebSocket** avec Socket.IO pour la communication
+- ✅ **Salles de course** pour isoler les événements
+- ✅ **Reconnexion automatique** en cas de perte de connexion
+- ✅ **Gestion des erreurs** de communication
+
 ## 🛠️ Technologies utilisées
 
-- **Frontend** : React, Tailwind CSS, Recharts, Axios
-- **Backend** : Node.js, Express, MongoDB, Mongoose
-- **API** : REST API avec validation
+- **Frontend** : React, Tailwind CSS, Recharts, Axios, Socket.IO Client
+- **Backend** : Node.js, Express, MongoDB, Mongoose, Socket.IO
+- **API** : REST API avec validation + WebSocket en temps réel
 - **Base de données** : MongoDB avec indexation optimisée
+- **Communication temps réel** : Socket.IO avec salles et événements
 
 ## 🔧 Configuration rapide
 
@@ -226,6 +245,13 @@ npm run dev
 - Frontend : http://localhost:3000
 - API : http://localhost:5000/api
 
+## 📚 Documentation
+
+- [Guide de collaboration](COLLABORATION_SETUP.md) - Configuration détaillée de la collaboration en temps réel
+- [Guide de dépannage](COLLABORATION_TROUBLESHOOTING.md) - Dépannage de la collaboration en temps réel
+- [Guide de déploiement](DEPLOYMENT.md) - Déploiement en production
+- [Configuration API](API_CONFIG.md) - Configuration des services
+
 ## 🐛 Dépannage
 
 ### Erreur de connexion MongoDB
@@ -242,3 +268,30 @@ npm run dev
 - Supprimez `node_modules` et `package-lock.json`
 - Relancez `npm install`
 - Relancez `npm run dev`
+
+### Erreur de collaboration en temps réel
+- Vérifiez que le serveur Socket.IO est démarré
+- Vérifiez la console du navigateur pour les erreurs WebSocket
+- Testez la connexion : `node test-collaboration.js`
+- Vérifiez que les ports 3000 et 5000 sont disponibles
+
+### Test de la collaboration en temps réel
+1. **Ouvrez 2 onglets** de l'application dans votre navigateur
+2. **Dans le premier onglet** :
+   - Sélectionnez un pilote (ex: Pilote C)
+   - Démarrez un relais
+3. **Dans le second onglet** :
+   - Vous devriez voir automatiquement :
+     - Le pilote actuel sélectionné (Pilote C)
+     - Le relais en cours avec le bon pilote
+     - Les notifications en temps réel
+4. **Testez d'autres actions** :
+   - Changement de pilote
+   - Fin de relais
+   - Ajout/suppression de pilotes
+   - Modification des paramètres
+
+### Vérification du statut de collaboration
+- Regardez le widget "Collaboration" dans l'onglet Course
+- Vérifiez que l'indicateur est vert et affiche "Connecté"
+- Les notifications apparaissent en haut à droite pour chaque action

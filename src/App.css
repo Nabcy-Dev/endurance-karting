@@ -39,3 +39,77 @@
     transform: rotate(360deg);
   }
 }
+
+/* Styles mobiles personnalisés */
+@media (max-width: 640px) {
+  /* Améliorer la lisibilité sur mobile */
+  .text-2xl {
+    font-size: 1.5rem;
+    line-height: 2rem;
+  }
+  
+  /* Optimiser les boutons sur mobile */
+  button {
+    min-height: 44px; /* Taille minimale recommandée pour mobile */
+  }
+  
+  /* Améliorer l'espacement sur mobile */
+  .space-y-4 > * + * {
+    margin-top: 1rem;
+  }
+  
+  /* Optimiser les cartes sur mobile */
+  .rounded-xl {
+    border-radius: 0.75rem;
+  }
+  
+  /* Améliorer la navigation mobile */
+  .mobile-nav-item {
+    padding: 0.75rem 1rem;
+    border-radius: 0.5rem;
+    transition: all 0.2s ease-in-out;
+  }
+  
+  .mobile-nav-item:active {
+    transform: scale(0.98);
+  }
+}
+
+/* Animations pour le menu mobile */
+.menu-slide-enter {
+  transform: translateX(100%);
+}
+
+.menu-slide-enter-active {
+  transform: translateX(0%);
+  transition: transform 300ms ease-in-out;
+}
+
+.menu-slide-exit {
+  transform: translateX(0%);
+}
+
+.menu-slide-exit-active {
+  transform: translateX(100%);
+  transition: transform 300ms ease-in-out;
+}
+
+/* Améliorer le scroll sur mobile */
+.mobile-scroll {
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e0 #f7fafc;
+}
+
+.mobile-scroll::-webkit-scrollbar {
+  width: 4px;
+}
+
+.mobile-scroll::-webkit-scrollbar-track {
+  background: #f7fafc;
+}
+
+.mobile-scroll::-webkit-scrollbar-thumb {
+  background: #cbd5e0;
+  border-radius: 2px;
+}

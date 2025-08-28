@@ -2,6 +2,10 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Play, Pause, RotateCcw, Users, Trophy, BarChart3, Flag, Clock, Plus, Trash2, RefreshCw, Target, Zap, Loader2, AlertTriangle, Camera, X, Download, History, CheckCircle, TrendingUp, PieChart as PieChartIcon } from 'lucide-react';
 import { raceService, driverService, lapService, utilService } from '../services/api';
 import WeatherWidget from '../components/WeatherWidget';
+import CollaborationStatus from '../components/CollaborationStatus';
+import RealtimeNotifications from '../components/RealtimeNotifications';
+import MobileMenu from '../components/MobileMenu';
+import socketService from '../services/socketService';
 import * as XLSX from 'xlsx';
 
 // Import conditionnel de Recharts pour éviter les erreurs
@@ -172,9 +176,35 @@ const KartingEnduranceApp = () => {
         setRaceStarted(true);
         setRaceStartTime(new Date(activeRace.startTime));
         setIsRunning(true);
+        
+        // Vérifier s'il y a un relais en cours
         if (activeRace.currentStintStart) {
-          setCurrentLapStart(new Date(activeRace.currentStintStart));
-          setStintRunning(true);
+          const stintStartTime = new Date(activeRace.currentStintStart);
+          const now = Date.now();
+          const stintDuration = now - stintStartTime.getTime();
+          
+          // Si le relais a commencé il y a moins de 2 heures, on le considère comme en cours
+          if (stintDuration < 2 * 60 * 60 * 1000) { // 2 heures
+            console.log('🔄 Relais en cours détecté au chargement:', {
+              startTime: stintStartTime,
+              duration: stintDuration,
+              driver: activeRace.currentDriver
+            });
+            
+            setStintRunning(true);
+            setCurrentLapStart(stintStartTime.getTime());
+            setCurrentStintTime(stintDuration);
+          } else {
+            console.log('⚠️ Relais trop ancien, pas de relais en cours');
+            setStintRunning(false);
+            setCurrentLapStart(0);
+            setCurrentStintTime(0);
+          }
+        } else {
+          console.log('ℹ️ Aucun relais en cours détecté');
+          setStintRunning(false);
+          setCurrentLapStart(0);
+          setCurrentStintTime(0);
         }
       }
 
@@ -196,6 +226,290 @@ const KartingEnduranceApp = () => {
   useEffect(() => {
     initializeApp();
   }, [initializeApp]);
+
+  // Configuration des écouteurs Socket.IO pour la collaboration en temps réel
+  useEffect(() => {
+    // Se connecter au service Socket.IO
+    console.log('🔌 Tentative de connexion Socket.IO...');
+    socketService.connect();
+    
+    // Vérifier le statut de connexion
+    const checkConnection = () => {
+      const status = socketService.getConnectionStatus();
+      console.log('🔌 Statut Socket.IO:', status);
+    };
+    
+    // Vérifier immédiatement
+    checkConnection();
+    
+    // Vérifier après un délai
+    setTimeout(checkConnection, 1000);
+    
+    if (!currentRace?._id) return;
+    
+    // Demander l'état actuel de la course aux autres clients
+    console.log('🔄 Demande de synchronisation avec les autres clients...');
+    socketService.requestRaceState(currentRace._id);
+
+    // Écouter les événements de course
+    const handleRaceStarted = (data) => {
+      if (data.raceId === currentRace._id) {
+        console.log('🔌 Événement reçu: Course démarrée par un autre utilisateur');
+        setRaceStarted(true);
+        setRaceStartTime(new Date(data.startTime || Date.now()));
+        setIsRunning(true);
+      }
+    };
+
+    const handleRaceFinished = (data) => {
+      if (data.raceId === currentRace._id) {
+        console.log('🔌 Événement reçu: Course terminée par un autre utilisateur');
+        setIsRunning(false);
+        setRaceStarted(false);
+        setStintRunning(false);
+        setCurrentStintTime(0);
+      }
+    };
+
+    const handleRaceReset = (data) => {
+      if (data.raceId === currentRace._id) {
+        console.log('🔌 Événement reçu: Course réinitialisée par un autre utilisateur');
+        setIsRunning(false);
+        setRaceStarted(false);
+        setRaceStartTime(null);
+        setCurrentDriverIndex(0);
+        setLaps([]);
+        setCurrentLapStart(0);
+        setStintRunning(false);
+        setCurrentStintTime(0);
+        setCurrentRaceDriverStats({});
+      }
+    };
+
+    // Écouter les événements de relais
+    const handleStintStarted = (data) => {
+      if (data.raceId === currentRace._id) {
+        console.log('🔌 Événement reçu: Relais démarré par un autre utilisateur');
+        console.log('   - Données reçues:', data);
+        
+        // Mettre à jour TOUS les états en une fois pour éviter les problèmes de synchronisation
+        const now = Date.now();
+        
+        // Synchroniser le pilote actuel si l'événement contient l'ID du pilote
+        let newDriverIndex = currentDriverIndex;
+        if (data.driverId) {
+          const driverIndex = drivers.findIndex(d => d._id === data.driverId);
+          if (driverIndex !== -1) {
+            console.log('🔌 Synchronisation du pilote actuel:', drivers[driverIndex].name, 'à l\'index', driverIndex);
+            newDriverIndex = driverIndex;
+          } else {
+            console.warn('⚠️ Pilote non trouvé pour l\'ID:', data.driverId);
+          }
+        } else {
+          console.warn('⚠️ Événement stint-started sans driverId');
+        }
+        
+        // Mettre à jour tous les états en une fois
+        setStintRunning(true);
+        setIsRunning(true);
+        setCurrentLapStart(now);
+        setCurrentStintTime(0);
+        setCurrentDriverIndex(newDriverIndex);
+        
+        // Forcer la mise à jour de l'interface
+        console.log('🔄 Interface mise à jour avec le relais démarré');
+      }
+    };
+
+    const handleStintEnded = (data) => {
+      if (data.raceId === currentRace._id) {
+        console.log('🔌 Événement reçu: Relais terminé par un autre utilisateur');
+        console.log('   - Données reçues:', data);
+        
+        // Mettre à jour l'état local immédiatement
+        setStintRunning(false);
+        setIsRunning(false);
+        setCurrentStintTime(0);
+        setCurrentLapStart(0);
+        
+        // Recharger les données de la course pour avoir l'historique à jour
+        setTimeout(() => {
+          refreshRaceData();
+        }, 100);
+        
+        console.log('🔄 Interface mise à jour avec le relais terminé');
+      }
+    };
+
+    // Écouter les événements de pilotes
+    const handleDriverChanged = (data) => {
+      if (data.raceId === currentRace._id) {
+        console.log('🔌 Événement reçu: Pilote changé par un autre utilisateur');
+        const driverIndex = drivers.findIndex(d => d._id === data.driverId);
+        if (driverIndex !== -1) {
+          setCurrentDriverIndex(driverIndex);
+        }
+      }
+    };
+
+    const handleDriverAdded = (data) => {
+      console.log('🔌 Événement reçu: Pilote ajouté par un autre utilisateur');
+      refreshDrivers();
+    };
+
+    const handleDriverRemoved = (data) => {
+      console.log('🔌 Événement reçu: Pilote supprimé par un autre utilisateur');
+      refreshDrivers();
+    };
+
+    // Écouter les événements de paramètres
+    const handleRaceSettingsUpdated = (data) => {
+      if (data.raceId === currentRace._id) {
+        console.log('🔌 Événement reçu: Paramètres mis à jour par un autre utilisateur');
+        refreshRaceData();
+      }
+    };
+    
+    // Écouter la demande d'état de la course
+    const handleRaceStateRequested = (data) => {
+      if (data.raceId === currentRace._id) {
+        console.log('🔌 Demande d\'état de la course reçue, émission de l\'état actuel');
+        // Émettre l'état actuel de la course
+        socketService.emitRaceState(currentRace._id, {
+          raceStarted,
+          isRunning,
+          stintRunning,
+          currentDriverIndex,
+          currentLapStart,
+          raceStartTime,
+          timestamp: Date.now()
+        });
+      }
+    };
+    
+    // Écouter la mise à jour de l'état de la course
+    const handleRaceStateUpdated = (data) => {
+      if (data.raceId === currentRace._id) {
+        console.log('🔌 État de la course reçu, synchronisation...');
+        console.log('   - Données reçues:', data);
+        
+        // Synchroniser TOUS les états en une fois
+        const updates = {};
+        
+        if (data.raceStarted !== undefined) {
+          updates.raceStarted = data.raceStarted;
+          setRaceStarted(data.raceStarted);
+        }
+        
+        if (data.isRunning !== undefined) {
+          updates.isRunning = data.isRunning;
+          setIsRunning(data.isRunning);
+        }
+        
+        if (data.stintRunning !== undefined) {
+          updates.stintRunning = data.stintRunning;
+          setStintRunning(data.stintRunning);
+        }
+        
+        if (data.currentDriverIndex !== undefined) {
+          updates.currentDriverIndex = data.currentDriverIndex;
+          setCurrentDriverIndex(data.currentDriverIndex);
+        }
+        
+        if (data.currentLapStart !== undefined) {
+          updates.currentLapStart = data.currentLapStart;
+          setCurrentLapStart(data.currentLapStart);
+        }
+        
+        if (data.raceStartTime !== undefined) {
+          updates.raceStartTime = data.raceStartTime;
+          setRaceStartTime(new Date(data.raceStartTime));
+        }
+        
+        console.log('🔄 États synchronisés:', updates);
+      }
+    };
+
+    // Enregistrer tous les écouteurs
+    socketService.on('race-started', handleRaceStarted);
+    socketService.on('race-finished', handleRaceFinished);
+    socketService.on('race-reset', handleRaceReset);
+    socketService.on('stint-started', handleStintStarted);
+    socketService.on('stint-ended', handleStintEnded);
+    socketService.on('driver-changed', handleDriverChanged);
+    socketService.on('driver-added', handleDriverAdded);
+    socketService.on('driver-removed', handleDriverRemoved);
+    socketService.on('race-settings-updated', handleRaceSettingsUpdated);
+    socketService.on('race-state-requested', handleRaceStateRequested);
+    socketService.on('race-state-updated', handleRaceStateUpdated);
+
+    // Nettoyer les écouteurs lors du démontage
+    return () => {
+      socketService.off('race-started', handleRaceStarted);
+      socketService.off('race-finished', handleRaceFinished);
+      socketService.off('race-reset', handleRaceReset);
+      socketService.off('stint-started', handleStintStarted);
+      socketService.off('stint-ended', handleStintEnded);
+      socketService.off('driver-changed', handleDriverChanged);
+      socketService.off('driver-added', handleDriverAdded);
+      socketService.off('driver-removed', handleDriverRemoved);
+      socketService.off('race-settings-updated', handleRaceSettingsUpdated);
+      socketService.off('race-state-requested', handleRaceStateRequested);
+      socketService.off('race-state-updated', handleRaceStateUpdated);
+    };
+  }, [currentRace?._id, drivers]);
+
+  // Fonction pour rafraîchir les données de la course
+  const refreshRaceData = async () => {
+    if (!currentRace?._id) return;
+    
+    try {
+      const [raceResponse, lapsResponse] = await Promise.all([
+        raceService.getById(currentRace._id),
+        lapService.getByRace(currentRace._id)
+      ]);
+      
+      setCurrentRace(raceResponse.data);
+      setLaps(lapsResponse.data);
+      
+      // Recalculer les statistiques
+      const raceDriverStats = {};
+      lapsResponse.data.forEach(lap => {
+        if (!raceDriverStats[lap.driver]) {
+          raceDriverStats[lap.driver] = {
+            driverId: lap.driver,
+            driverName: lap.driverName,
+            laps: 0,
+            totalTime: 0,
+            lapTimes: []
+          };
+        }
+        raceDriverStats[lap.driver].laps++;
+        raceDriverStats[lap.driver].totalTime += lap.lapTime;
+        raceDriverStats[lap.driver].lapTimes.push(lap.lapTime);
+      });
+      
+      Object.keys(raceDriverStats).forEach(driverId => {
+        const stats = raceDriverStats[driverId];
+        stats.bestLap = Math.min(...stats.lapTimes);
+        stats.averageLap = stats.totalTime / stats.laps;
+      });
+      
+      setCurrentRaceDriverStats(raceDriverStats);
+    } catch (err) {
+      console.error('Erreur lors du rafraîchissement des données:', err);
+    }
+  };
+
+  // Fonction pour rafraîchir la liste des pilotes
+  const refreshDrivers = async () => {
+    try {
+      const driversResponse = await driverService.getAll();
+      setDrivers(driversResponse.data);
+    } catch (err) {
+      console.error('Erreur lors du rafraîchissement des pilotes:', err);
+    }
+  };
 
   // Chronomètre principal pour les temps en temps réel
   useEffect(() => {
@@ -231,6 +545,12 @@ const KartingEnduranceApp = () => {
       setRaceStartTime(new Date(updatedRace.startTime));
       setCurrentLapStart(new Date(updatedRace.currentStintStart));
       setIsRunning(true);
+
+      // Émettre l'événement de collaboration
+      socketService.emitRaceStarted(currentRace._id, {
+        startTime: updatedRace.startTime,
+        currentStintStart: updatedRace.currentStintStart
+      });
     } catch (err) {
       console.error('Erreur lors du démarrage de la course:', err);
       setError('Erreur lors du démarrage de la course');
@@ -240,6 +560,8 @@ const KartingEnduranceApp = () => {
   // Reset complet
   const resetRace = async () => {
     try {
+      const oldRaceId = currentRace?._id;
+      
       setIsRunning(false);
       setRaceStarted(false);
       setRaceStartTime(null);
@@ -262,6 +584,14 @@ const KartingEnduranceApp = () => {
       });
       
       setCurrentRace(newRace.data);
+
+      // Émettre l'événement de collaboration si une course existait
+      if (oldRaceId) {
+        socketService.emitRaceReset(oldRaceId, {
+          newRaceId: newRace.data._id,
+          timestamp: Date.now()
+        });
+      }
     } catch (err) {
       console.error('Erreur lors du reset:', err);
       setError('Erreur lors du reset de la course');
@@ -282,16 +612,62 @@ const KartingEnduranceApp = () => {
         setRaceStarted(true);
         setRaceStartTime(new Date(updatedRace.startTime));
         setIsRunning(true);
+
+        // Émettre l'événement de démarrage de course
+        socketService.emitRaceStarted(currentRace._id, {
+          startTime: updatedRace.startTime,
+          currentStintStart: updatedRace.currentStintStart
+        });
       }
       
-      // Changer de pilote
-      await raceService.changeDriver(currentRace._id, drivers[currentDriverIndex]._id);
-      
+      // Démarrer le relais (sans changer de pilote automatiquement)
       setStintRunning(true);
       setIsRunning(true);
       const now = Date.now();
       setCurrentLapStart(now);
       setCurrentStintTime(0);
+      
+      // Mettre à jour la course dans la base de données avec le début du relais
+      try {
+        await raceService.update(currentRace._id, {
+          currentStintStart: new Date(now),
+          currentDriver: drivers[currentDriverIndex]._id
+        });
+        console.log('💾 Course mise à jour dans la base de données');
+      } catch (err) {
+        console.warn('⚠️ Impossible de mettre à jour la course:', err);
+      }
+      
+      console.log('🚀 Relais démarré localement:', {
+        driver: drivers[currentDriverIndex].name,
+        stintRunning: true,
+        isRunning: true,
+        currentLapStart: now
+      });
+
+      // Vérifier que Socket.IO est connecté avant d'émettre
+      if (socketService.getConnectionStatus().isConnected) {
+        // Émettre l'événement de démarrage de relais
+        socketService.emitStintStarted(currentRace._id, drivers[currentDriverIndex].name, {
+          driverId: drivers[currentDriverIndex]._id,
+          timestamp: now
+        });
+        
+        // Émettre l'état complet de la course pour synchroniser tous les clients
+        socketService.emitRaceState(currentRace._id, {
+          raceStarted: true,
+          isRunning: true,
+          stintRunning: true,
+          currentDriverIndex: currentDriverIndex,
+          currentLapStart: now,
+          raceStartTime: raceStarted ? raceStartTime : now,
+          timestamp: Date.now()
+        });
+        
+        console.log('🚀 Relais démarré et état émis à tous les clients');
+      } else {
+        console.warn('⚠️ Socket.IO non connecté, impossible d\'émettre les événements');
+      }
     } catch (err) {
       console.error('Erreur lors du démarrage du relais:', err);
       setError('Erreur lors du démarrage du relais');
@@ -324,7 +700,18 @@ const KartingEnduranceApp = () => {
       const newLap = await lapService.create(lapData);
       setLaps(prev => [...prev, newLap.data]);
       
-      // Mettre à jour la course
+      // Mettre à jour la course dans la base de données
+      try {
+        await raceService.update(currentRace._id, {
+          currentStintStart: null,
+          currentDriver: null
+        });
+        console.log('💾 Course mise à jour dans la base de données (relais terminé)');
+      } catch (err) {
+        console.warn('⚠️ Impossible de mettre à jour la course:', err);
+      }
+      
+      // Récupérer la course mise à jour
       const updatedRace = await raceService.getById(currentRace._id);
       setCurrentRace(updatedRace.data);
       
@@ -350,6 +737,31 @@ const KartingEnduranceApp = () => {
       });
       
       setCurrentStintTime(0);
+
+      // Vérifier que Socket.IO est connecté avant d'émettre
+      if (socketService.getConnectionStatus().isConnected) {
+        // Émettre l'événement de fin de relais
+        socketService.emitStintEnded(currentRace._id, drivers[currentDriverIndex].name, {
+          lapId: newLap.data._id,
+          lapTime: lapTime,
+          timestamp: now
+        });
+        
+        // Émettre l'état complet de la course pour synchroniser tous les clients
+        socketService.emitRaceState(currentRace._id, {
+          raceStarted: true,
+          isRunning: false,
+          stintRunning: false,
+          currentDriverIndex: currentDriverIndex,
+          currentLapStart: 0,
+          raceStartTime: raceStartTime,
+          timestamp: Date.now()
+        });
+        
+        console.log('⏹️ Relais terminé et état émis à tous les clients');
+      } else {
+        console.warn('⚠️ Socket.IO non connecté, impossible d\'émettre les événements');
+      }
     } catch (err) {
       console.error('Erreur lors de la fin du relais:', err);
       setError('Erreur lors de la fin du relais');
@@ -360,6 +772,12 @@ const KartingEnduranceApp = () => {
   const changeDriver = async (newIndex) => {
     if (!currentRace || !drivers[newIndex]) return;
     
+    // Empêcher le changement de pilote pendant un relais
+    if (stintRunning) {
+      console.log('⚠️ Impossible de changer de pilote pendant un relais en cours');
+      return; // Pas d'erreur visible, juste empêcher l'action
+    }
+    
     try {
       setCurrentDriverIndex(newIndex);
       
@@ -367,6 +785,23 @@ const KartingEnduranceApp = () => {
         await raceService.changeDriver(currentRace._id, drivers[newIndex]._id);
         const updatedRace = await raceService.getById(currentRace._id);
         setCurrentRace(updatedRace.data);
+
+        // Émettre l'événement de changement de pilote
+        socketService.emitDriverChanged(currentRace._id, drivers[newIndex].name, {
+          driverId: drivers[newIndex]._id,
+          timestamp: Date.now()
+        });
+        
+        // Émettre l'état complet de la course pour synchroniser tous les clients
+        socketService.emitRaceState(currentRace._id, {
+          raceStarted,
+          isRunning,
+          stintRunning,
+          currentDriverIndex: newIndex,
+          currentLapStart,
+          raceStartTime,
+          timestamp: Date.now()
+        });
       }
     } catch (err) {
       console.error('Erreur lors du changement de pilote:', err);
@@ -387,6 +822,15 @@ const KartingEnduranceApp = () => {
       const newDriver = await driverService.create(driverData);
       setDrivers(prev => [...prev, newDriver.data]);
       setNewDriverName("");
+
+      // Émettre l'événement d'ajout de pilote
+      if (currentRace?._id) {
+        socketService.emitDriverAdded(currentRace._id, {
+          driverId: newDriver.data._id,
+          driverName: newDriver.data.name,
+          timestamp: Date.now()
+        });
+      }
     } catch (err) {
       console.error('Erreur lors de l\'ajout du pilote:', err);
       setError('Erreur lors de l\'ajout du pilote');
@@ -402,6 +846,11 @@ const KartingEnduranceApp = () => {
         
         if (currentDriverIndex >= drivers.length - 1) {
           setCurrentDriverIndex(0);
+        }
+
+        // Émettre l'événement de suppression de pilote
+        if (currentRace?._id) {
+          socketService.emitDriverRemoved(currentRace._id, id);
         }
       } catch (err) {
         console.error('Erreur lors de la suppression du pilote:', err);
@@ -594,6 +1043,9 @@ const KartingEnduranceApp = () => {
           race._id === currentRace._id ? { ...race, name: newSettings.raceName } : race
         ));
       }
+
+      // Émettre l'événement de mise à jour des paramètres
+      socketService.emitRaceSettingsUpdated(currentRace._id, updatedSettings);
     } catch (err) {
       console.error('Erreur lors de la mise à jour des paramètres:', err);
       setError('Erreur lors de la mise à jour des paramètres');
@@ -982,6 +1434,14 @@ const KartingEnduranceApp = () => {
       
       // Réinitialiser les statistiques de la course actuelle
       setCurrentRaceDriverStats({});
+
+      // Émettre l'événement de fin de course
+      socketService.emitRaceFinished(updatedRace._id, {
+        endTime: updatedRace.endTime,
+        totalLaps: updatedRace.totalLaps,
+        totalTime: updatedRace.totalTime,
+        timestamp: Date.now()
+      });
       
     } catch (err) {
       console.error('Erreur lors de la fin de la course:', err);
@@ -1100,7 +1560,7 @@ const KartingEnduranceApp = () => {
   const navigationTabs = [
     { id: 'course', label: 'Course', icon: Flag },
     { id: 'drivers', label: 'Pilotes', icon: Users },
-    { id: 'stats', label: 'Statistiques', icon: BarChart3 },
+    // { id: 'stats', label: 'Statistiques', icon: BarChart3 },
     { id: 'history', label: 'Historique', icon: History },
     { id: 'settings', label: 'Paramètres', icon: Target }
   ];
@@ -1314,81 +1774,113 @@ const KartingEnduranceApp = () => {
 
   return (
     <div className="min-h-screen bg-gray-50">
+      {/* Menu mobile */}
+      <MobileMenu 
+        activeTab={activeTab}
+        setActiveTab={setActiveTab}
+        raceStarted={raceStarted}
+        isRunning={isRunning}
+        stintRunning={stintRunning}
+        currentTime={currentTime}
+        raceStartTime={raceStartTime}
+        currentLapStart={currentLapStart}
+        timeRemaining={timeRemaining}
+        raceProgress={raceProgress}
+        formatTime={formatTime}
+        finishRace={finishRace}
+        setShowResetConfirm={setShowResetConfirm}
+      />
       {/* En-tête */}
       <header className="bg-white shadow-sm border-b border-gray-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          {/* En-tête principal */}
           <div className="flex justify-between items-center py-4">
-            <div className="flex items-center space-x-4">
-              <img src="/sygma-control-logo.svg" alt="Sygma Control" className="h-8" />
-              <h1 className="text-xl font-bold text-gray-900">Karting Endurance</h1>
+            <div className="flex items-center space-x-3 sm:space-x-4">
+              <img src="/sygma-control-logo.svg" alt="Sygma Control" className="h-6 sm:h-8" />
+              <h1 className="text-lg sm:text-xl font-bold text-gray-900">Karting Endurance</h1>
             </div>
-            <div className="flex items-center space-x-6">
-              {/* Temps de course écoulé */}
+            
+            {/* Date - visible sur tous les écrans */}
+            <div className="hidden sm:block text-sm text-gray-500">
+              {new Date().toLocaleDateString('fr-FR', { 
+                weekday: 'long', 
+                year: 'numeric', 
+                month: 'long', 
+                day: 'numeric' 
+              })}
+            </div>
+            
+            {/* Boutons de contrôle - cachés sur mobile (dans le menu) */}
+            <div className="hidden lg:flex items-center space-x-3">
               {raceStarted && (
-                <div className="text-center">
-                  <div className="text-sm text-gray-500">Temps écoulé</div>
-                  <div className="text-lg font-mono font-bold text-gray-800">
+                <button
+                  onClick={finishRace}
+                  className="flex items-center space-x-2 px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors text-sm font-semibold"
+                >
+                  <Trophy className="w-4 h-4" />
+                  <span>Terminer course</span>
+                </button>
+              )}
+              
+              <button
+                onClick={() => setShowResetConfirm(true)}
+                className="flex items-center space-x-2 px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors text-sm font-semibold"
+              >
+                <RotateCcw className="w-4 h-4" />
+                <span>Reset</span>
+              </button>
+            </div>
+          </div>
+          
+          {/* Barre de temps - responsive */}
+          {raceStarted && (
+            <div className="pb-4 border-t border-gray-100 pt-4">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-6">
+                {/* Temps de course écoulé */}
+                <div className="text-center bg-blue-50 rounded-lg p-3 border border-blue-200">
+                  <div className="text-xs sm:text-sm text-blue-600 font-medium mb-1">Temps écoulé</div>
+                  <div className="text-base sm:text-lg font-mono font-bold text-blue-800">
                     {formatTime(totalElapsedTime)}
                   </div>
                 </div>
-              )}
-              
-              {/* Temps restant de course */}
-              {raceStarted && (
-                <div className="text-center">
-                  <div className="text-sm text-gray-500">Temps restant</div>
-                  <div className="text-lg font-mono font-bold text-red-600">
+                
+                {/* Temps restant de course */}
+                <div className="text-center bg-red-50 rounded-lg p-3 border border-red-200">
+                  <div className="text-xs sm:text-sm text-red-600 font-medium mb-1">Temps restant</div>
+                  <div className="text-base sm:text-lg font-mono font-bold text-red-800">
                     {formatTime(timeRemaining)}
                   </div>
                 </div>
-              )}
-              
-              {/* Temps en course (relais en cours) */}
-              {stintRunning && (
-                <div className="text-center">
-                  <div className="text-sm text-gray-500">Temps en course</div>
-                  <div className="text-lg font-mono font-bold text-blue-600">
-                    {formatTime(currentStintTime)}
+                
+                {/* Temps en course (relais en cours) */}
+                {stintRunning && (
+                  <div className="text-center bg-green-50 rounded-lg p-3 border border-green-200">
+                    <div className="text-xs sm:text-sm text-green-600 font-medium mb-1">Temps en course</div>
+                    <div className="text-base sm:text-lg font-mono font-bold text-green-800">
+                      {formatTime(currentStintTime)}
+                    </div>
                   </div>
-                </div>
-              )}
-              
-              {/* Boutons de contrôle */}
-              <div className="flex items-center space-x-3">
-                {raceStarted && (
-                  <button
-                    onClick={finishRace}
-                    className="flex items-center space-x-2 px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors text-sm font-semibold"
-                  >
-                    <Trophy className="w-4 h-4" />
-                    <span>Terminer course</span>
-                  </button>
                 )}
                 
-                <button
-                  onClick={() => setShowResetConfirm(true)}
-                  className="flex items-center space-x-2 px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors text-sm font-semibold"
-                >
-                  <RotateCcw className="w-4 h-4" />
-                  <span>Reset</span>
-                </button>
+                {/* Barre de progression */}
+                <div className="text-center bg-gray-50 rounded-lg p-3 border border-gray-200 col-span-2 sm:col-span-1">
+                  <div className="text-xs sm:text-sm text-gray-600 font-medium mb-2">Progression</div>
+                  <div className="w-full bg-gray-200 rounded-full h-2 mb-1">
+                    <div 
+                      className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                      style={{ width: `${raceProgress}%` }}
+                    ></div>
+                  </div>
+                  <div className="text-xs text-gray-500">{raceProgress.toFixed(1)}%</div>
+                </div>
               </div>
-              
-              <span className="text-sm text-gray-500">
-                {new Date().toLocaleDateString('fr-FR', { 
-                  weekday: 'long', 
-                  year: 'numeric', 
-                  month: 'long', 
-                  day: 'numeric' 
-                })}
-              </span>
             </div>
-          </div>
+          )}
         </div>
       </header>
 
-      {/* Navigation */}
-      <nav className="bg-white border-b border-gray-200">
+      {/* Navigation - cachée sur mobile (remplacée par le menu burger) */}
+      <nav className="hidden lg:block bg-white border-b border-gray-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex space-x-8">
             {navigationTabs.map(tab => {
@@ -1432,62 +1924,114 @@ const KartingEnduranceApp = () => {
 
         {/* Onglet Course */}
         {activeTab === 'course' && (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-6">
-            {/* Colonne 1 : Widget météo (plus petite) */}
-            <div className="lg:col-span-3 md:col-span-1 col-span-1 space-y-6 order-1">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 sm:gap-6">
+            {/* Colonne 1 : Widget météo + Statut collaboration - caché sur mobile */}
+            <div className="hidden lg:block lg:col-span-3 space-y-6">
               <WeatherWidget city={raceSettings.city} />
+                     {/* Statistiques rapides */}
+                     <div className="bg-white border border-gray-200 rounded-xl shadow-lg p-4 sm:p-6">
+                <h3 className="text-base sm:text-lg font-semibold mb-3 sm:mb-4 text-gray-800 flex items-center">
+                  <Trophy className="w-4 h-4 sm:w-5 sm:h-5 mr-2 text-blue-600" />
+                  Stats rapides
+                </h3>
+                <div className="space-y-3">
+                  <div className="flex justify-between items-center p-2 bg-gray-50 rounded">
+                    <span className="text-sm text-gray-600">Total relais</span>
+                    <span className="font-semibold text-gray-800">{laps.length}</span>
+                  </div>
+                  <div className="flex justify-between items-center p-2 bg-gray-50 rounded">
+                    <span className="text-sm text-gray-600">Temps total</span>
+                    <span className="font-semibold text-gray-800">{formatTime(currentRace?.totalTime || 0)}</span>
+                  </div>
+                  <div className="flex justify-between items-center p-2 bg-gray-50 rounded">
+                    <span className="text-sm text-gray-600">Meilleur relais</span>
+                    <span className="font-semibold text-gray-800">
+                      {laps.length > 0 ? formatTime(Math.min(...laps.map(lap => lap.lapTime))) : '--'}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center p-2 bg-gray-50 rounded">
+                    <span className="text-sm text-gray-600">Moyenne</span>
+                    <span className="font-semibold text-gray-800">
+                      {laps.length > 0 ? formatTime(laps.reduce((acc, lap) => acc + lap.lapTime, 0) / laps.length) : '--'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+              {/* <CollaborationStatus raceId={currentRace?._id} /> */}
             </div>
 
             {/* Colonne 2 : Relais en cours + Derniers relais (dominante) */}
-            <div className="lg:col-span-6 md:col-span-1 col-span-1 space-y-6 order-2">
+            <div className="lg:col-span-6 space-y-4 sm:space-y-6">
               {/* Chronomètre et contrôles */}
-              <div className="bg-white border border-gray-200 rounded-xl shadow-lg p-8">
-                <div className="text-center mb-8">
-                  <div className="text-4xl font-mono font-bold mb-4 text-gray-800">
-                    Relais en cours : {raceStarted && isRunning ? formatTime(currentStintTime) : '00:00:00'}
+              <div className="bg-white border border-gray-200 rounded-xl shadow-lg p-4 sm:p-6 lg:p-8">
+                <div className="text-center mb-6 sm:mb-8">
+                  <div className="text-2xl sm:text-3xl lg:text-4xl font-mono font-bold mb-3 sm:mb-4 text-gray-800">
+                    {stintRunning ? (
+                      <span className="text-green-600">
+                        Relais en cours : {formatTime(currentStintTime)}
+                      </span>
+                    ) : (
+                      <span className="text-gray-600">
+                        Relais en cours : 00:00:00
+                      </span>
+                    )}
                   </div>
-                  <div className="text-lg text-gray-600 mb-4 flex items-center justify-center space-x-2">
+                  
+                  <div className="text-sm sm:text-lg text-gray-600 mb-3 sm:mb-4 flex flex-col sm:flex-row items-center justify-center space-y-2 sm:space-y-0 sm:space-x-2">
                     <span>Pilote actuel :</span>
                     {drivers[currentDriverIndex] ? (
                       <>
                         <ProfileImage driver={drivers[currentDriverIndex]} size="w-6 h-6" />
-                        <span>{drivers[currentDriverIndex].name}</span>
+                        <span className={`font-semibold ${stintRunning ? 'text-green-600' : 'text-gray-800'}`}>
+                          {drivers[currentDriverIndex].name}
+                          {stintRunning && (
+                            <span className="ml-2 inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                              🏁 En course
+                            </span>
+                          )}
+                        </span>
                       </>
                     ) : (
                       <span>Aucun pilote</span>
                     )}
+                    
+                    {/* Indicateur de synchronisation en temps réel */}
+                    <div className="flex items-center space-x-1">
+                      <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                      <span className="text-xs text-green-600 font-medium">Temps réel</span>
+                    </div>
                   </div>
                   
                   {/* Barre de progression */}
-                  <div className="w-full bg-gray-200 rounded-full h-2 mb-4">
+                  <div className="w-full bg-gray-200 rounded-full h-2 mb-3 sm:mb-4">
                     <div 
                       className="bg-blue-600 h-2 rounded-full transition-all duration-300"
                       style={{ width: `${raceProgress}%` }}
                     ></div>
                   </div>
                   
-                  <div className="text-sm text-gray-500">
+                  <div className="text-xs sm:text-sm text-gray-500">
                     Temps restant : {formatTime(timeRemaining)}
                   </div>
                 </div>
 
                 {/* Contrôles */}
-                <div className="flex justify-center space-x-4">
+                <div className="flex flex-col sm:flex-row justify-center space-y-3 sm:space-y-0 sm:space-x-4">
                   {!stintRunning ? (
                     <button
                       onClick={startStint}
                       disabled={!drivers[currentDriverIndex]}
-                      className="flex items-center space-x-2 px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                      className="flex items-center justify-center space-x-2 px-4 sm:px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm sm:text-base"
                     >
-                      <Play className="w-5 h-5" />
+                      <Play className="w-4 h-4 sm:w-5 sm:h-5" />
                       <span>Démarrer relais</span>
                     </button>
                   ) : (
                     <button
                       onClick={endStint}
-                      className="flex items-center space-x-2 px-6 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+                      className="flex items-center justify-center space-x-2 px-4 sm:px-6 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-sm sm:text-base"
                     >
-                      <Pause className="w-5 h-5" />
+                      <Pause className="w-4 h-4 sm:w-5 sm:h-5" />
                       <span>Terminer relais</span>
                     </button>
                   )}
@@ -1495,9 +2039,9 @@ const KartingEnduranceApp = () => {
               </div>
 
               {/* Derniers relais */}
-              <div className="bg-white border border-gray-200 rounded-xl shadow-lg p-8">
-                <h3 className="text-lg font-semibold mb-4 text-gray-800 flex items-center">
-                  <History className="w-5 h-5 mr-2 text-blue-600" />
+              <div className="bg-white border border-gray-200 rounded-xl shadow-lg p-4 sm:p-6 lg:p-8">
+                <h3 className="text-base sm:text-lg font-semibold mb-3 sm:mb-4 text-gray-800 flex items-center">
+                  <History className="w-4 h-4 sm:w-5 sm:h-5 mr-2 text-blue-600" />
                   Derniers relais
                 </h3>
                 <div className="space-y-2 max-h-64 overflow-y-auto">
@@ -1537,11 +2081,11 @@ const KartingEnduranceApp = () => {
             </div>
 
             {/* Colonne 3 : Relais pilotes + Stats rapides */}
-            <div className="lg:col-span-3 md:col-span-2 col-span-1 space-y-6 order-3">
+            <div className="lg:col-span-3 space-y-4 sm:space-y-6">
               {/* Relais par pilote */}
-              <div className="bg-white border border-gray-200 rounded-xl shadow-lg p-6">
-                <h3 className="text-lg font-semibold mb-4 text-gray-800 flex items-center">
-                  <Users className="w-5 h-5 mr-2 text-blue-600" />
+              <div className="bg-white border border-gray-200 rounded-xl shadow-lg p-4 sm:p-6">
+                <h3 className="text-base sm:text-lg font-semibold mb-3 sm:mb-4 text-gray-800 flex items-center">
+                  <Users className="w-4 h-4 sm:w-5 sm:h-5 mr-2 text-blue-600" />
                   Relais par pilote
                 </h3>
                 <div className="space-y-3">
@@ -1552,12 +2096,16 @@ const KartingEnduranceApp = () => {
                     return (
                       <div 
                         key={driver._id} 
-                        className={`p-3 rounded-lg border-2 transition-colors cursor-pointer ${
+                        className={`p-3 rounded-lg border-2 transition-colors ${
+                          stintRunning 
+                            ? 'opacity-50 cursor-not-allowed' // Grisé et non-cliquable pendant un relais
+                            : 'cursor-pointer hover:border-gray-300' // Normal et cliquable
+                        } ${
                           index === currentDriverIndex 
                             ? 'border-blue-500 bg-blue-50' 
-                            : 'border-gray-200 hover:border-gray-300'
+                            : 'border-gray-200'
                         }`}
-                        onClick={() => changeDriver(index)}
+                        onClick={() => !stintRunning && changeDriver(index)}
                       >
                         <div className="flex items-center justify-between">
                           <div className="flex items-center space-x-3">
@@ -1581,35 +2129,7 @@ const KartingEnduranceApp = () => {
                 </div>
               </div>
 
-              {/* Statistiques rapides */}
-              <div className="bg-white border border-gray-200 rounded-xl shadow-lg p-6">
-                <h3 className="text-lg font-semibold mb-4 text-gray-800 flex items-center">
-                  <Trophy className="w-5 h-5 mr-2 text-blue-600" />
-                  Stats rapides
-                </h3>
-                <div className="space-y-3">
-                  <div className="flex justify-between items-center p-2 bg-gray-50 rounded">
-                    <span className="text-sm text-gray-600">Total relais</span>
-                    <span className="font-semibold text-gray-800">{laps.length}</span>
-                  </div>
-                  <div className="flex justify-between items-center p-2 bg-gray-50 rounded">
-                    <span className="text-sm text-gray-600">Temps total</span>
-                    <span className="font-semibold text-gray-800">{formatTime(currentRace?.totalTime || 0)}</span>
-                  </div>
-                  <div className="flex justify-between items-center p-2 bg-gray-50 rounded">
-                    <span className="text-sm text-gray-600">Meilleur relais</span>
-                    <span className="font-semibold text-gray-800">
-                      {laps.length > 0 ? formatTime(Math.min(...laps.map(lap => lap.lapTime))) : '--'}
-                    </span>
-                  </div>
-                  <div className="flex justify-between items-center p-2 bg-gray-50 rounded">
-                    <span className="text-sm text-gray-600">Moyenne</span>
-                    <span className="font-semibold text-gray-800">
-                      {laps.length > 0 ? formatTime(laps.reduce((acc, lap) => acc + lap.lapTime, 0) / laps.length) : '--'}
-                    </span>
-                  </div>
-                </div>
-              </div>
+       
             </div>
           </div>
         )}
@@ -2262,6 +2782,9 @@ const KartingEnduranceApp = () => {
           </div>
         </div>
       )}
+
+      {/* Notifications en temps réel */}
+      <RealtimeNotifications />
     </div>
   );
 };

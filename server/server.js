@@ -1,9 +1,25 @@
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
+const http = require('http');
+const socketIo = require('socket.io');
 require('dotenv').config();
 
 const app = express();
+const server = http.createServer(app);
+const io = socketIo(server, {
+  cors: {
+    origin: [
+      'http://localhost:3000',
+      'https://endurance-karting-1.onrender.com',
+      'https://endurance-karting.onrender.com',
+      'https://karting-endurance.onrender.com'
+    ],
+    methods: ["GET", "POST"],
+    credentials: true
+  }
+});
+
 const PORT = process.env.PORT || 5000;
 
 // Configuration CORS améliorée pour Render
@@ -83,7 +99,7 @@ mongoose
       console.log("   - Sur Windows : Démarrez le service MongoDB");
       console.log("   - Sur macOS/Linux : sudo systemctl start mongod");
     } else if (err.name === 'MongoServerSelectionError') {
-      console.log("💡 Solution : Vérifiez l'URI de connexion MongoDB");
+      console.log("�� Solution : Vérifiez l'URI de connexion MongoDB");
       console.log("   - Format local : mongodb://localhost:27017/karting-endurance");
       console.log("   - Format Atlas : mongodb+srv://user:password@cluster.mongodb.net/karting-endurance");
     } else if (err.message.includes('Authentication failed')) {
@@ -160,9 +176,104 @@ app.use((err, req, res, next) => {
   });
 });
 
-app.listen(PORT, () => {
+// Gestion des connexions Socket.IO
+io.on('connection', (socket) => {
+  console.log(`🔌 Client connecté: ${socket.id}`);
+  
+  // Rejoindre la salle de course
+  socket.on('join-race', (raceId) => {
+    socket.join(`race-${raceId}`);
+    console.log(`🏁 Client ${socket.id} a rejoint la course ${raceId}`);
+    
+    // Émettre l'état actuel de la course à tous les clients dans la salle
+    socket.to(`race-${raceId}`).emit('user-joined-race', {
+      raceId,
+      userId: socket.id,
+      timestamp: Date.now()
+    });
+  });
+  
+  // Quitter la salle de course
+  socket.on('leave-race', (raceId) => {
+    socket.leave(`race-${raceId}`);
+    console.log(`🚪 Client ${socket.id} a quitté la course ${raceId}`);
+  });
+  
+  // Événements de course
+  socket.on('race-started', (data) => {
+    socket.to(`race-${data.raceId}`).emit('race-started', data);
+    console.log(`🚀 Course démarrée: ${data.raceId}`);
+  });
+  
+  socket.on('race-finished', (data) => {
+    socket.to(`race-${data.raceId}`).emit('race-finished', data);
+    console.log(`🏁 Course terminée: ${data.raceId}`);
+  });
+  
+  socket.on('race-reset', (data) => {
+    socket.to(`race-${data.raceId}`).emit('race-reset', data);
+    console.log(`🔄 Course réinitialisée: ${data.raceId}`);
+  });
+  
+  // Événements de relais
+  socket.on('stint-started', (data) => {
+    socket.to(`race-${data.raceId}`).emit('stint-started', data);
+    console.log(`▶️ Relais démarré: ${data.driverName} dans la course ${data.raceId}`);
+  });
+  
+  socket.on('stint-ended', (data) => {
+    socket.to(`race-${data.raceId}`).emit('stint-ended', data);
+    console.log(`⏹️ Relais terminé: ${data.driverName} dans la course ${data.raceId}`);
+  });
+  
+  // Événements de pilotes
+  socket.on('driver-changed', (data) => {
+    socket.to(`race-${data.raceId}`).emit('driver-changed', data);
+    console.log(`👤 Pilote changé: ${data.driverName} dans la course ${data.raceId}`);
+  });
+  
+  socket.on('driver-added', (data) => {
+    socket.to(`race-${data.raceId}`).emit('driver-added', data);
+    console.log(`➕ Pilote ajouté: ${data.driverName}`);
+  });
+  
+  socket.on('driver-removed', (data) => {
+    socket.to(`race-${data.raceId}`).emit('driver-removed', data);
+    console.log(`➖ Pilote supprimé: ${data.driverId}`);
+  });
+  
+  // Événements de paramètres
+  socket.on('race-settings-updated', (data) => {
+    socket.to(`race-${data.raceId}`).emit('race-settings-updated', data);
+    console.log(`⚙️ Paramètres mis à jour pour la course ${data.raceId}`);
+  });
+  
+  // Demander l'état actuel de la course
+  socket.on('request-race-state', (raceId) => {
+    socket.to(`race-${raceId}`).emit('race-state-requested', {
+      raceId,
+      requesterId: socket.id,
+      timestamp: Date.now()
+    });
+  });
+  
+  // Émettre l'état actuel de la course
+  socket.on('emit-race-state', (data) => {
+    socket.to(`race-${data.raceId}`).emit('race-state-updated', data);
+    console.log(`🔄 État de la course émis pour ${data.raceId}`);
+  });
+  
+  // Déconnexion
+  socket.on('disconnect', () => {
+    console.log(`🔌 Client déconnecté: ${socket.id}`);
+  });
+});
+
+// Modifier la ligne d'écoute pour utiliser le serveur HTTP
+server.listen(PORT, () => {
   console.log(`🚀 Serveur démarré sur le port ${PORT}`);
   console.log(`API disponible sur http://localhost:${PORT}/api`);
   console.log(`📁 Environnement: ${process.env.NODE_ENV || 'development'}`);
   console.log(`🌐 CORS autorisé pour: ${allowedOrigins.join(', ')}`);
+  console.log(`🔌 Socket.IO activé pour la collaboration en temps réel`);
 }); 
